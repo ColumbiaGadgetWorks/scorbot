@@ -25,13 +25,13 @@ PCB = os.path.normpath(os.path.join(HERE, "..", "scorbot_controller.kicad_pcb"))
 # (name, width um, clearance um, via, net matcher) -- keep in step with the
 # netclasses in scorbot_controller.kicad_pro
 CLASSES = [
-    ("Power", 1500, 300, "Via_1000:500", lambda n: n in ("VIN_RAW", "VIN", "VM")),
-    ("Motor", 800, 300, "Via_1000:500", lambda n: n.startswith("MOT")),
+    ("Power", 2500, 300, "Via_1600:800", lambda n: n in ("VIN_RAW", "VIN", "VM")),
+    ("Motor", 1200, 300, "Via_1200:600", lambda n: n.startswith("MOT")),
     ("Ground", 400, 200, "Via_800:400", lambda n: n == "GND"),
     ("Supply", 500, 250, "Via_800:400", lambda n: n in ("+5V", "+5V_DK") or n.startswith("VREF")),
 ]
 DEFAULT = (250, 200, "Via_800:400")
-VIAS = {"Via_800:400": 800, "Via_1000:500": 1000}
+VIAS = {"Via_800:400": 800, "Via_1200:600": 1200, "Via_1600:800": 1600}  # name: pad dia um (drill = half)
 
 
 EDGE_MARGIN = 500  # um: keep routed copper this far inside the board edge
@@ -52,7 +52,7 @@ def rewrite_dsn(text):
     stacks = "".join(f'    (padstack "{name}"\n      (shape (circle F.Cu {d}))\n      (shape (circle B.Cu {d}))\n'
                      f'      (attach off)\n    )\n' for name, d in VIAS.items())
     text = re.sub(r'(\(library\n)', r'\1' + stacks.replace("\\", "\\\\"), text, count=1)
-    text = re.sub(r'\(via "Via\[0-1\]_600:300_um"\)', '(via "Via_800:400" "Via_1000:500")', text)
+    text = re.sub(r'\(via "Via\[0-1\]_600:300_um"\)', '(via "Via_800:400" "Via_1200:600" "Via_1600:800")', text)
     text = re.sub(r'\(rule\n\s*\(width 200\)\n\s*\(clearance 200.1\)',
                   f'(rule\n      (width {DEFAULT[0]})\n      (clearance {DEFAULT[1]})', text, count=1)
     # replace the single kicad_default class with ours

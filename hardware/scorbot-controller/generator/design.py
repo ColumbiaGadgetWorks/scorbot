@@ -53,7 +53,8 @@ def db50_pin_names():
 
 
 # ---------------------------------------------------------------------------
-# ESP32-DevKitC V4 (38-pin, WROOM-32E). Pins 1-19 = header J2 (3V3 end
+# ESP32-DevKitC V4 layout (38-pin, WROOM-32D or -32E; pin labels checked
+# against a photo of the user's WROOM-32D board). Pins 1-19 = header J2 (3V3 end
 # first), pins 20-38 = header J3 (GND end first). The 3V3/GND end is the
 # antenna end; the 5V/CLK end is the USB end.
 # ---------------------------------------------------------------------------
@@ -65,21 +66,19 @@ DEVKIT_PINS = [
     "GND", "IO23", "IO22", "IO1", "IO3", "IO21", "GND", "IO19", "IO18", "IO5",
     "IO17", "IO16", "IO4", "IO0", "IO2", "IO15", "IO8", "IO7", "IO6",
 ]
-DEVKIT_ROW_SPACING = 25.4  # mm between J2 and J3 -- MEASURE YOUR BOARD
+DEVKIT_ROW_SPACING = 25.4  # mm between J2 and J3 (photo of the board in hand fits 25.4; confirm with calipers)
 
 # ---------------------------------------------------------------------------
-# Pololu DRV8874 carrier (#4035).
-# !!! PLACEHOLDER PIN ORDER !!! The pin NAMES are right (from Pololu's
-# product description); the physical ORDER and spacing below are a guess
-# because pololu.com was unreachable when this was generated. Fix
-# CARRIER_ROWS / CARRIER_ROW_SPACING from the carrier's pinout drawing and
-# re-run the generators.
+# Pololu DRV8874 carrier (#4035), 0.6" x 0.7", two rows of 7 pins 0.5" apart.
+# Pin order from Pololu's "top view with labeled pinout" (product page,
+# checked 2026-10-11), as seen from above with the carrier plugged in
+# components-up. Rows are listed top to bottom.
 # ---------------------------------------------------------------------------
 CARRIER_ROWS = [
-    ["VIN", "VM", "GND", "OUT1", "OUT2", "GND"],                         # power side
-    ["PMODE", "IMODE", "EN", "PH", "SLEEP", "FAULT", "CS", "VREF"],     # logic side
+    ["VM", "GND", "EN", "PH", "PMODE", "SLEEP", "VREF"],      # left: logic side
+    ["VIN", "GND", "OUT1", "OUT2", "IMODE", "FAULT", "CS"],   # right: motor side
 ]
-CARRIER_ROW_SPACING = 12.7  # mm -- PLACEHOLDER
+CARRIER_ROW_SPACING = 12.7  # mm (0.5")
 
 
 # ---------------------------------------------------------------------------
@@ -90,8 +89,6 @@ CARRIER_ROW_SPACING = 12.7  # mm -- PLACEHOLDER
 # row is EN, IN+, IN-, OUT-, OUT+; the board socket takes the last four
 # (EN is left unconnected; floating = enabled on these modules).
 BUCK_PINS = ["IN+", "IN-", "OUT-", "OUT+"]
-# Adafruit #1085 ADS1115 breakout pin order (other sellers differ).
-ADS1115_PINS = ["VDD", "GND", "SCL", "SDA", "ADDR", "ALRT", "A0", "A1", "A2", "A3"]
 
 
 def carrier_pins():
@@ -154,8 +151,14 @@ part("J7", "Connector:Screw_Terminal_01x02", "FUSE alt: wire inline 5A fuse (fit
      {1: "VIN_RAW", 2: "VIN"}, "power", pcb=(28, 22, 90))
 # No reverse-polarity FET: a reversed supply forward-biases the unidirectional
 # TVS and blows the external fuse on J7. The driver carriers and buck module also protect themselves.
-part("D1", "Device:D_TVS", "SMBJ18A (unidirectional)", "Diode_SMD:D_SMB",
-     {1: "VIN", 2: "GND"}, "power", pcb=(40, 44, 90))
+# Fit ONE of these by hand (both are left out of the JLC assembly):
+#   D1  SMBJ18A, SMB package, or
+#   D8  through-hole 1.5KE18A / P6KE18A (or any 1N540x-class rectifier for
+#       reverse-polarity only, without the over-voltage clamp).
+part("D1", "Device:D_TVS", "SMBJ18A (fit D1 OR D8)", "Diode_SMD:D_SMB",
+     {1: "VIN", 2: "GND"}, "power", pcb=(40, 44, 90), hand=True)
+part("D8", "Device:D_TVS", "1.5KE18A THT (fit D1 OR D8)", "Diode_THT:D_DO-201AD_P15.24mm_Horizontal",
+     {1: "VIN", 2: "GND"}, "power", pcb=(40, 44, 0), hand=True)
 CP("C1", "1000uF 25V low-ESR", "VIN", "GND", "power",
    "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm", pcb=(14, 58, 0))
 C("C2", "100nF 50V", "VIN", "GND", "power", pcb=(26, 58, 0))
@@ -202,7 +205,7 @@ LED("D6", "STATUS (blue)", "LED_ST_A", "GND", "mcu", pcb=(62, 108, 0))
 R("R12", "1k", "+3V3", "LED_3V3", "mcu", pcb=(62, 112, 0))
 LED("D7", "3V3 (green)", "LED_3V3", "GND", "mcu", pcb=(62, 116, 0))
 
-# ---- I2C: TCA9555 + 2x ADS1115 modules -----------------------------------------------
+# ---- I2C: TCA9555 + 2x ADS1115 (placed by JLC) ---------------------------------------
 R("R13", "4.7k", "+3V3", "SDA", "i2c", pcb=(72, 70, 0))
 R("R14", "4.7k", "+3V3", "SCL", "i2c", pcb=(72, 73, 0))
 R("R15", "10k", "+3V3", "EXP_INT", "i2c", pcb=(72, 76, 0))
@@ -216,13 +219,17 @@ tca = {1: "EXP_INT", 2: "GND", 3: "GND", 21: "GND", 22: "SCL", 23: "SDA",
 part("U5", "Interface_Expansion:TCA9555PWR", "TCA9555PWR (0x20)",
      "Package_SO:TSSOP-24_4.4x7.8mm_P0.65mm", tca, "i2c", pcb=(84, 56, 0))
 C("C9", "100nF", "+3V3", "GND", "i2c", pcb=(84, 48, 0))
-ads_a = {"VDD": "+3V3", "GND": "GND", "SCL": "SCL", "SDA": "SDA", "ADDR": "GND", "ALRT": None,
-         "A0": "CS1", "A1": "CS2", "A2": "CS3", "A3": "CS4"}
-ads_b = dict(ads_a, ADDR="+3V3", A0="CS5", A1="CS6", A2="VM_ADC", A3="GND")
-part("U6", "Scorbot:ADS1115_Module", "ADS1115 module (0x48)", "Scorbot:ADS1115_Module_Socket",
-     {i + 1: ads_a[n] for i, n in enumerate(ADS1115_PINS)}, "i2c", pcb=(104, 56, 0))
-part("U7", "Scorbot:ADS1115_Module", "ADS1115 module (0x49)", "Scorbot:ADS1115_Module_Socket",
-     {i + 1: ads_b[n] for i, n in enumerate(ADS1115_PINS)}, "i2c", pcb=(104, 76, 0))
+# ADS1115IDGSR (VSSOP-10): 1 ADDR, 2 ALERT/RDY, 3 GND, 4-7 AIN0-3, 8 VDD, 9 SDA, 10 SCL.
+# ADDR straight to GND -> 0x48, to VDD -> 0x49. ALERT/RDY is unused.
+ads_a = {1: "GND", 2: None, 3: "GND", 4: "CS1", 5: "CS2", 6: "CS3", 7: "CS4", 8: "+3V3", 9: "SDA", 10: "SCL"}
+ads_b = dict(ads_a)
+ads_b.update({1: "+3V3", 4: "CS5", 5: "CS6", 6: "VM_ADC", 7: "GND"})
+part("U6", "Analog_ADC:ADS1115IDGS", "ADS1115IDGSR (0x48)", "Package_SO:TSSOP-10_3x3mm_P0.5mm",
+     ads_a, "i2c", pcb=(104, 56, 0))
+part("U7", "Analog_ADC:ADS1115IDGS", "ADS1115IDGSR (0x49)", "Package_SO:TSSOP-10_3x3mm_P0.5mm",
+     ads_b, "i2c", pcb=(104, 76, 0))
+C("C10", "100nF", "+3V3", "GND", "i2c", pcb=(104, 52, 0))
+C("C11", "100nF", "+3V3", "GND", "i2c", pcb=(104, 72, 0))
 part("J5", "Connector_Generic:Conn_01x04", "I2C expansion",
      "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
      {1: "+3V3", 2: "GND", 3: "SDA", 4: "SCL"}, "i2c", pcb=(84, 112, 90))

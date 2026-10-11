@@ -1,12 +1,12 @@
 # Scorbot ER-4u ESP32 master board (KiCad)
 
 KiCad project for the replacement controller: an ESP32 DevKit, six Pololu
-DRV8874 carriers, a DROK mini 5 V buck module and two ADS1115 ADC
-modules plug into a master board, and the robot's DD-50 cable plugs straight
-into the board edge. The only SMD chip left for JLCPCB to place is the
-TCA9555; everything else on the board is passives, LEDs and diodes.
+DRV8874 carriers and a DROK mini 5 V buck module plug into a master board,
+and the robot's DD-50 cable plugs straight into the board edge. JLCPCB
+places the SMD parts: passives, LEDs, the SS14, the TCA9555 I/O expander and
+two ADS1115 ADCs.
 
-**Status: v0.2, generated: schematic complete, PCB placed and autorouted (needs a human review before ordering).**
+**Status: v0.3, generated: schematic complete, carrier pinout verified, PCB placed and autorouted (needs a human review before ordering).**
 
 | File | What it is |
 | --- | --- |
@@ -45,55 +45,80 @@ changes.
 
 ## Must check before ordering boards
 
-Blockers (the board is wrong or unbuildable until these are done):
+Done in v0.3:
 
-1. **Pololu carrier pin order is a placeholder, and probably wrong.** The
-   #4035 board is 0.6" x 0.7", which only fits 7 pins per side, but
-   `CARRIER_ROWS` has 6 + 8. IMODE is most likely not broken out (the
-   carrier pulls it to GND through 20 k), leaving 7 logic pins. Copy the
-   real order and row spacing from Pololu's pinout drawing (or a carrier in
-   hand) into `CARRIER_ROWS` / `CARRIER_ROW_SPACING`, then re-run
-   `generate.sh`; it re-places and re-routes the board.
-2. **DevKit row spacing.** `DEVKIT_ROW_SPACING = 25.4` mm. Measure your
-   38-pin DevKitC between pin centres; clones vary.
-3. **DD-50 footprint** is generated from KiCad's D-sub geometry (pitch
-   2.77 x 2.84 mm, rows 1 and 3 aligned, D-shell hole spacing 61.11 mm).
-   Print the board 1:1 and lay the connector on it, or check the drawing of
-   the exact right-angle part you buy.
-4. **JLC part numbers.** `fab/jlc_bom.csv` holds LCSC numbers from memory
-   and search snapshots. Look each one up in JLCPCB's parts library (value,
-   package, Basic vs Extended, stock) before ordering.
+- **Pololu carrier pinout** is taken from Pololu's labeled top view: left
+  row VM, GND, EN, PH, PMODE, SLEEP, VREF; right row VIN, GND, OUT1, OUT2,
+  IMODE, FAULT, CS; rows 0.5" apart. Silkscreen marks VM (top left) and VIN
+  (top right) on each socket: plug the carrier in components-up with its VM
+  pin at the VM mark.
+- **DevKit pinout** matches a photo of the board in hand (DevKitC V4 layout,
+  3V3 at the antenna end).
+- **Copper**: 1 oz. VIN/VM traces are 2.5 mm with 1.6/0.8 mm vias, motor
+  traces 1.2 mm with 1.2/0.6 mm vias.
 
-Check in KiCad / the JLC preview:
+Still to check:
 
-5. **Module pin orders**: the DROK buck socket (`BUCK_PINS`: IN+, IN-,
-   OUT-, OUT+; the module's EN pin hangs off the end) and the ADS1115
-   breakout (`ADS1115_PINS`, Adafruit #1085 order; other sellers differ).
-6. **Autorouted copper.** Freerouting's result is DRC-clean but not pretty:
-   long parallel runs across the middle, and motor/VM traces near the
-   encoder lines. Look over the VM and MOT paths in particular.
-7. **Copper weight.** VM carries up to the 5 A fuse current on 1.5 mm
-   traces, and the motor outputs up to about 2.9 A (carrier limit) on
-   0.8 mm. On 1 oz copper that is roughly a 20-25 C rise at those peaks.
-   Order 2 oz copper, or widen VM/MOT in `netclasses.py` / `gen_route.py`.
-8. **Part orientation in JLC's placement preview**: diode and LED
-   polarity (D1, D3-D7) and pin 1 of U5. KiCad-to-JLC rotations sometimes
-   need a 90/180 degree fix in `jlc_cpl.csv`.
-9. **Screw terminal wire entry** (J2, J3, J7) should face the board edge.
+1. **DevKit row spacing.** `DEVKIT_ROW_SPACING = 25.4` mm. Measure
+   between pin centres across the two rows with calipers.
+2. **DD-50 footprint** (Amphenol DD50S564TLF planned) is generated from
+   KiCad's D-sub geometry (pitch 2.77 x 2.84 mm, D-shell hole spacing
+   61.11 mm, flange 15.1 mm from row 1). Compare against the DD50S564TLF
+   drawing, or print the board 1:1 and lay the connector on it.
+3. **JLC part numbers** in `fab/jlc_bom.csv`: look each one up (see below).
+4. **Part orientation in JLC's placement preview** (see below).
+5. **Autorouted copper.** DRC-clean but not pretty; look over the VIN/VM
+   and MOT paths, and the long parallel runs across the middle.
+6. **Screw terminal wire entry** (J2, J3, J7) should face the board edge.
    Check in KiCad's 3D viewer.
-10. **Mechanical fit**: board is 185 x 128 mm with M3 holes in the
-    corners; check the enclosure and that the DevKit's USB port and
-    antenna end are reachable/clear.
+
+Fit by hand, one of each pair:
+
+- **D1 (SMBJ18A, SMB) or D8 (1.5KE18A / P6KE18A, through-hole)**: the
+  reverse-polarity / over-voltage clamp. Neither is placed by JLC.
+- **F1 (blade fuse holder) or J7 (screw terminal + inline fuse)**.
+- **J1 (barrel jack) or J2 (screw terminal)** for the 12 V input.
 
 ## Ordering at JLCPCB
 
 `generator/gen_fab.py` (run by `generate.sh`) writes `fab/`:
 
 - `scorbot_controller_gerbers.zip`: upload as the PCB (2 layers, 1.6 mm,
-  2 oz copper recommended).
+  1 oz copper).
 - `jlc_bom.csv` and `jlc_cpl.csv`: upload for PCB Assembly, top side only.
   These list only the SMD parts JLC places. Everything else is
   hand-soldered: see the buy list in the plan doc.
+
+### Checking the JLC part numbers
+
+For each line of `fab/jlc_bom.csv`, search the LCSC number at
+<https://jlcpcb.com/parts> and confirm:
+
+- value and package match the Comment and Footprint columns (0805, 1206,
+  SMA, TSSOP-24, MSOP/VSSOP-10);
+- capacitors are X7R/X5R and 25 V or more; the 1206 47 R resistors are
+  rated 0.25 W;
+- Basic vs Extended (each Extended part adds a one-off loading fee, about
+  $1.50-3);
+- stock covers (quantity x number of boards).
+
+If a number is wrong or out of stock, pick any equivalent Basic part and
+change it in the `LCSC` table in `generator/gen_fab.py` (or edit the CSV).
+
+### Checking orientation in JLC's placement preview
+
+After uploading the BOM and CPL, JLC shows each part on the board. Zoom in
+and check:
+
+- **U5 (TCA9555), U6/U7 (ADS1115)**: the pin-1 dot on the chip sits on the
+  pin-1 marker of the footprint.
+- **D5 (SS14)**: the cathode band is on the pad marked as cathode (toward
+  the DevKit's 5 V feed).
+- **LEDs D3, D4, D6, D7**: the cathode mark faces the GND side.
+- Resistors and capacitors have no polarity.
+
+If a part is turned the wrong way, rotate it in JLC's tool (or add 90/180 to
+its Rotation in `jlc_cpl.csv`). Diodes and LEDs are the usual offenders.
 
 ## Design notes
 
@@ -117,7 +142,8 @@ Check in KiCad / the JLC preview:
   be rated for total motor current. Logic stays powered.
 - **Carrier current limit**: VREF is pulled to SLEEP (3.3 V) by 10 k on the
   carrier and CS has 2.49 k, giving about 2.9 A. R21-R26 (DNP) lower it.
-- **Current sense**: two ADS1115 modules (0x48: CS1-4, 0x49: CS5, CS6 and
-  VM/5.7). CS reads 1.12 V/A; use the ADS1115's +/-4.096 V range.
+- **Current sense**: two ADS1115IDGSR chips on the board (0x48: CS1-4,
+  0x49: CS5, CS6 and VM/5.7; ADDR strapped to GND / 3V3). CS reads 1.1 V/A;
+  use the ADS1115's +/-4.096 V range.
 - Plan, firmware architecture and API: see the "Scorbot ER-4u ESP32
   Controller Plan" doc.

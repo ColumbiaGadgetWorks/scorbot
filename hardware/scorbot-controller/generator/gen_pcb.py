@@ -144,11 +144,14 @@ def build():
         return [fps[p["ref"]] for p in D.PARTS
                 if p["group"] == group and p["ref"] in fps and p["ref"] not in exclude]
 
-    # ADS1115 modules side by side in the middle of the board
-    for ref, left in (("U6", 86.0), ("U7", 106.0)):
+    # ADS1115 chips in the middle of the board, each with its decoupling cap
+    for ref, cap, left in (("U6", "C10", 96.0), ("U7", "C11", 110.0)):
         fps[ref].SetOrientationDegrees(0)
-        move_bbox_to(fps[ref], left=left, top=46)
-    explicit = {"J1", "J2", "J3", "J4", "J7", "F1", "U2", "U6", "U7", "H1", "H2", "H3", "H4"} | {f"U{9 + i}" for i in range(1, 7)} \
+        move_bbox_to(fps[ref], left=left, top=50)
+        l, t, r, b = bbox(fps[ref])
+        fps[cap].SetOrientationDegrees(90)
+        move_bbox_to(fps[cap], left=r + 0.8, top=t)
+    explicit = {"J1", "J2", "J3", "J4", "J7", "F1", "U2", "U6", "U7", "C10", "C11", "H1", "H2", "H3", "H4"} | {f"U{9 + i}" for i in range(1, 7)} \
         | {f"C{20 + i}" for i in range(1, 7)} | {f"R{20 + i}" for i in range(1, 7)}
     for fp in fps.values():
         fp.SetOrientationDegrees(fp.GetOrientationDegrees())
@@ -169,8 +172,8 @@ def build():
         seg.SetLayer(pcbnew.Edge_Cuts)
         seg.SetWidth(MM(0.1))
         board.Add(seg)
-    for txt, x, y, size in (("SCORBOT ER-4u ESP32 MASTER BOARD v0.1", 92, 91, 1.5),
-                            ("Autorouted - review before ordering. Carrier socket pinout UNVERIFIED.", 92, 94.5, 1.0)):
+    for txt, x, y, size in (("SCORBOT ER-4u ESP32 MASTER BOARD v0.3", 92, 91, 1.5),
+                            ("github.com/ColumbiaGadgetWorks/scorbot", 92, 94.5, 1.0)):
         t = pcbnew.PCB_TEXT(board)
         t.SetText(txt)
         t.SetPosition(pt(x, y))

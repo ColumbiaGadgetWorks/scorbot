@@ -12,9 +12,10 @@ API.
 | [`firmware/`](firmware/) | ESP-IDF 5.3+ firmware, the single-file web UI, and host-side tests on a simulated arm |
 
 The board takes an ESP32-DevKitC (WROOM-32D or -32E), six Pololu #4035
-DRV8874 motor driver carriers, a DROK 5 V buck module and two ADS1115 ADC
-breakouts on headers. The robot's DB-50 cable plugs straight in. JLCPCB places
-only the small SMD parts; everything else is through-hole.
+DRV8874 motor driver carriers and a DROK 5 V buck module on headers. The
+robot's DB-50 cable plugs straight in. JLCPCB places the SMD parts (passives,
+LEDs, the TCA9555 I/O expander and two ADS1115 ADCs); the connectors, sockets
+and big capacitors are through-hole and hand-soldered.
 
 **Status:** the board has not been ordered or tested, and the firmware has not run on
 hardware. Read "Must check before ordering boards" in the
