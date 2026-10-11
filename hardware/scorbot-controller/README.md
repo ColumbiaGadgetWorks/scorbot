@@ -6,7 +6,7 @@ and the robot's DD-50 cable plugs straight into the board edge. JLCPCB
 places the SMD parts: passives, LEDs, the SS14, the TCA9555 I/O expander and
 two ADS1115 ADCs.
 
-**Status: v0.4, generated: schematic complete, carrier and DD-50 footprints checked against their datasheets, PCB autorouted. The DD-50 bracket holes and one LCSC number left to confirm before ordering.**
+**Status: v0.4, generated: schematic complete, carrier and DD-50 footprints checked against their datasheets, PCB autorouted. Ready to order; check part orientation in JLC's preview.**
 
 | File | What it is |
 | --- | --- |
@@ -66,10 +66,10 @@ Done:
 
 Still to check:
 
-1. **DD-50 bracket holes.** The brochure doesn't dimension the 50-way
-   plastic bracket, so the two 3.2 mm holes sit on the shell-hole centres
-   (61.11 mm apart), 12.94 mm behind the flange. Check against the part
-   (or Amphenol's DD50S564TLF drawing) before ordering.
+1. **DD-50 bracket holes** (not blocking): the brochure doesn't dimension
+   the 50-way plastic bracket, so the two 3.2 mm holes sit on the shell-hole
+   centres (61.11 mm apart), 12.94 mm behind the flange. The connector is
+   held by its 50 soldered pins either way.
 2. **R31-R36 LCSC number**: C341654 (Fenghua 47 R 2512 1 W, Extended;
    alternate C4347277). Confirm stock.
 3. **Part orientation in JLC's placement preview** (see below).
