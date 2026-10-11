@@ -6,7 +6,7 @@ and the robot's DD-50 cable plugs straight into the board edge. JLCPCB
 places the SMD parts: passives, LEDs, the SS14, the TCA9555 I/O expander and
 two ADS1115 ADCs.
 
-**Status: v0.4, generated: schematic complete, carrier and DD-50 footprints checked against their datasheets, PCB autorouted. Two LCSC numbers and the DD-50 bracket holes left to confirm before ordering.**
+**Status: v0.4, generated: schematic complete, carrier and DD-50 footprints checked against their datasheets, PCB autorouted. The DD-50 bracket holes and one LCSC number left to confirm before ordering.**
 
 | File | What it is |
 | --- | --- |
@@ -61,7 +61,8 @@ Done:
   (stamped contacts, termination type 5): tail rows 2.54 mm apart, the row
   nearest the flange 10.40 mm from it, 2.77 mm pitch, 61.11 mm between the
   shell holes.
-- **LCSC numbers** checked by search, except the two below.
+- **LCSC numbers** checked by search (C465732 is TI's TCA9555PWR; its LCSC
+  attribute text is a generic I/O-expander template).
 
 Still to check:
 
@@ -69,9 +70,8 @@ Still to check:
    plastic bracket, so the two 3.2 mm holes sit on the shell-hole centres
    (61.11 mm apart), 12.94 mm behind the flange. Check against the part
    (or Amphenol's DD50S564TLF drawing) before ordering.
-2. **Two LCSC numbers to pick** in `generator/gen_fab.py`: the TCA9555PWR
-   (C465732 turned out to be a different chip) and a 47 R 1 W 2512
-   resistor for R31-R36.
+2. **R31-R36 LCSC number**: C341654 (Fenghua 47 R 2512 1 W, Extended;
+   alternate C4347277). Confirm stock.
 3. **Part orientation in JLC's placement preview** (see below).
 4. **Autorouted copper.** DRC-clean but not pretty; look over the VIN/VM
    and MOT paths, and the long parallel runs across the middle.
