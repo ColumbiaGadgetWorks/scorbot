@@ -425,7 +425,7 @@ function renderTest(){
   $("#selfTestProg").style.width = (testing? (done/6*100):0)+"%";
   $("#selfTestState").textContent = testing ? `testing ${MN[S.busy]||""}…` : (done? `${S.mtest.filter(t=>t.r==="pass").length}/6 passed` : "");
   for(let i=0;i<5;i++){ const l=lamps[i]; l.classList.toggle("on", S.sw[i]); l.lastChild.textContent = (S.sw_on[i]?"✓":"○")+" on  "+(S.sw_off[i]&&S.sw_on[i]?"✓":"○")+" off"; }
-  const lim = (CFG && CFG.current_limit_a) || 2.5, full = 3.0;
+  const lim = (CFG && CFG.current_limit_a) || 1.2, full = 1.5;
   for(let m=0;m<6;m++){
     const r=motorRows[m], t=S.mtest[m];
     setBadge(r.res, t.r); r.f.textContent = t.r==="pending"?"":t.fwd; r.b.textContent = t.r==="pending"?"":t.rev; r.i.textContent = t.r==="pending"?"":fmt(t.i,2); r.note.textContent=t.note;
@@ -672,7 +672,7 @@ const viewer = {
 // ---------------------------------------------------------------------------
 class MockRobot {
   constructor(){
-    this.cfg = {current_limit_a:2.5,calib_duty:0.6,test_duty:0.7,test_ms:300,gripper_open_mm:40,jog_timeout_ms:300,roll_ratio:1,home_order:[1,2,3,4,5,0],
+    this.cfg = {current_limit_a:1.2,calib_duty:0.6,test_duty:0.7,test_ms:300,gripper_open_mm:40,jog_timeout_ms:300,roll_ratio:1,home_order:[1,2,3,4,5,0],
       joints:[["base",-155,155,140],["shoulder",-35,130,140],["elbow",-130,130,140],["pitch",-130,130,75],["roll",-570,570,75],["gripper",0,75,100]].map(([name,lo,hi,cpu],i)=>({name,has_switch:i<5,home_dir:-1,spec_min:lo,spec_max:hi,continuous:i===4,counts_per_unit:cpu,cpu_calibrated:false,home_pos:0,soft_min:lo+2,soft_max:hi-2,vmax:[40,30,30,60,90,20][i],amax:180,home_speed:8,follow_err:8,stall_ms:150})),
       motors:[0,1,2,3,4,5].map(()=>({motor_dir:1,enc_dir:1,kp:0.004,ki:0.0008,kd:0.00002,i_zone:300,min_duty:0.3,max_duty:1}))};
     this.pos=[25,55,-35,-20,0,30]; this.tgt=this.pos.slice(); this.vel=[0,0,0,0,0,0]; this.jogUntil=[0,0,0,0,0,0];

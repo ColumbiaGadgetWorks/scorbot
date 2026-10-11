@@ -9,6 +9,11 @@ constexpr int kJoints = 6;   // base, shoulder, elbow, wrist pitch, wrist roll, 
 constexpr int kMotors = 6;   // motor 4/5 drive pitch+roll through the differential wrist
 constexpr int kSwitches = 5; // home microswitches on joints 0..4 (gripper has none)
 
+// Pololu #4036 DRV8876 carrier: the driver chops at VREF / (1000 uA/A x 2.49k).
+// VREF is pulled to SLEEP (3.3 V), so about 1.33 A. The carrier is rated
+// 1.3 A continuous.
+constexpr float kDriverCurrentLimitA = 1.33f;
+
 enum Joint : int { kBase = 0, kShoulder, kElbow, kPitch, kRoll, kGripper };
 
 struct MotorConfig {
@@ -48,7 +53,7 @@ struct RobotConfig {
   float calib_duty = 0.6f;          // duty cap while driving into hard stops
   float test_duty = 0.7f;           // duty for the open-loop motor test
   uint16_t test_ms = 300;           // pulse length per direction for the motor test
-  float current_limit_a = 2.5f;     // software over-current trip (hardware limit ~2.9 A)
+  float current_limit_a = 1.2f;     // software over-current trip, below kDriverCurrentLimitA
   uint8_t home_order[kJoints] = {kShoulder, kElbow, kPitch, kRoll, kGripper, kBase};
   float gripper_open_mm = 40.f;     // opening after homing the gripper
   uint16_t jog_timeout_ms = 300;    // jog stops if no heartbeat

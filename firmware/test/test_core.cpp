@@ -191,6 +191,21 @@ static void TestEStopAndFaults() {
   CHECK(std::strstr(r.robot.status().fault, "following") != nullptr, "fault '%s'", r.robot.status().fault);
 }
 
+static void TestOverCurrent() {
+  std::puts("safety: sustained current near the DRV8876 limit trips, brief peaks don't");
+  Rig r;
+  r.run(0.05f);
+  r.robot.enable();
+  r.sim.extra_amps[kElbow] = 1.3f;
+  r.run(0.3f);
+  CHECK(r.robot.status().mode != Mode::kFault, "tripped early: '%s'", r.robot.status().fault);
+  r.sim.extra_amps[kElbow] = 0;
+  r.run(0.3f);
+  r.sim.extra_amps[kElbow] = 1.3f;
+  r.run(0.6f);
+  CHECK(std::strstr(r.robot.status().fault, "over-current on motor 3") != nullptr, "fault '%s'", r.robot.status().fault);
+}
+
 static void TestDifferentialWrist() {
   std::puts("wrist: pitch-only move drives both wrist motors the same way");
   Rig r;
@@ -216,6 +231,7 @@ int main() {
   TestMotorTestFindsReversedMotor();
   TestSelfTest();
   TestEStopAndFaults();
+  TestOverCurrent();
   TestDifferentialWrist();
   std::printf("\n%d checks passed, %d failed\n", g_pass, g_fail);
   return g_fail ? 1 : 0;

@@ -150,7 +150,10 @@ void Robot::readInputs(float dt) {
         oc_ms_[m] += dt * 1000.f;
       else
         oc_ms_[m] = 0;
-      if (oc_ms_[m] > 50.f) {
+      // The DRV8876 chops at ~1.33 A, so a stall sits just above the trip.
+      // Wait long enough for the stall and following-error checks to name
+      // the problem first; this catches sustained overload while moving.
+      if (oc_ms_[m] > 500.f) {
         char buf[48];
         std::snprintf(buf, sizeof(buf), "over-current on motor %d", m + 1);
         fault(buf);
