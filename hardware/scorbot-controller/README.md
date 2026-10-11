@@ -72,7 +72,9 @@ Still to check:
    held by its 50 soldered pins either way.
 2. **R31-R36 LCSC number**: C341654 (Fenghua 47 R 2512 1 W, Extended;
    alternate C4347277). Confirm stock.
-3. **Part orientation in JLC's placement preview** (see below).
+3. **Part orientation in JLC's placement preview** (see below). First pass
+   checked: the TSSOPs were 90 degrees off and are now corrected in the CPL;
+   D5 and the LEDs were already right. Re-check U5-U7 after re-uploading.
 4. **Autorouted copper.** DRC-clean but not pretty; look over the VIN/VM
    and MOT paths, and the long parallel runs across the middle.
 5. **Screw terminal wire entry** (J2, J3, J7) should face the board edge.
@@ -133,7 +135,9 @@ and check:
 - Resistors and capacitors have no polarity.
 
 If a part is turned the wrong way, rotate it in JLC's tool (or add 90/180 to
-its Rotation in `jlc_cpl.csv`). Diodes and LEDs are the usual offenders.
+its Rotation in `jlc_cpl.csv`). To make the fix permanent, add the
+footprint to `ROT_FIX` in `generator/gen_fab.py`. It already turns the TSSOPs
+(U5-U7) by -90 degrees, because JLC's TSSOP models sit 90 degrees from KiCad's.
 
 ## Design notes
 
