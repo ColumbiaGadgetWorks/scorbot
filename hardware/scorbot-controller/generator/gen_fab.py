@@ -34,7 +34,7 @@ LCSC = {
     ("22k", D.R0805): "C17560",
     ("47k", D.R0805): "C17713",
     ("10k", D.R1206): "C17902",
-    ("47R", D.R2512): "",  # 47 R 2512 1 W: number still to pick (C17714 turned out to be 0805)
+    ("47R", D.R2512): "C341654",   # Fenghua RC-12K470JT 47 R 2512 1 W, Extended (alt C4347277)
     ("100nF", D.C0805): "C49678",
     ("1nF", D.C0805): "C46653",
     ("VM on (green)", D.LED0805): "C2297",
@@ -43,7 +43,7 @@ LCSC = {
     ("STATUS (red)", D.LED0805): "C84256",  # red 0805 (confirmed by search)
     ("SS14", "Diode_SMD:D_SMA"): "C2480",
     ("SMBJ18A", "Diode_SMD:D_SMB"): "C168805",            # Extended
-    ("TCA9555PWR", "Package_SO:TSSOP-24_4.4x7.8mm_P0.65mm"): "",  # C465732 was not a TCA9555: still to pick
+    ("TCA9555PWR", "Package_SO:TSSOP-24_4.4x7.8mm_P0.65mm"): "C465732",  # TI TCA9555PWR, Extended
     ("ADS1115IDGSR", "Package_SO:TSSOP-10_3x3mm_P0.5mm"): "C37593",       # Extended
 }
 
