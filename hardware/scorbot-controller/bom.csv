@@ -20,7 +20,7 @@ Qty,Value,Footprint,References,Populate
 1,5V (green),LED_SMD:LED_0805_2012Metric,D4,yes
 1,SS14,Diode_SMD:D_SMA,D5,yes
 1,"ESP32-DevKitC (WROOM-32D or -32E, 38-pin)",Scorbot:ESP32_DevKitC_V4_Socket,U2,yes
-1,STATUS (blue),LED_SMD:LED_0805_2012Metric,D6,yes
+1,STATUS (red),LED_SMD:LED_0805_2012Metric,D6,yes
 1,3V3 (green),LED_SMD:LED_0805_2012Metric,D7,yes
 1,TCA9555PWR (0x20),Package_SO:TSSOP-24_4.4x7.8mm_P0.65mm,U5,yes
 1,ADS1115IDGSR (0x48),Package_SO:TSSOP-10_3x3mm_P0.5mm,U6,yes
@@ -35,7 +35,7 @@ Qty,Value,Footprint,References,Populate
 1,Pololu #4035 DRV8874 (M4),Scorbot:Pololu_DRV8874_Carrier_Socket,U13,yes
 1,Pololu #4035 DRV8874 (M5),Scorbot:Pololu_DRV8874_Carrier_Socket,U14,yes
 1,Pololu #4035 DRV8874 (M6),Scorbot:Pololu_DRV8874_Carrier_Socket,U15,yes
-6,47R 0.25W,Resistor_SMD:R_1206_3216Metric,R31 R32 R33 R34 R35 R36,yes
+6,47R 1W,Resistor_SMD:R_2512_6332Metric,R31 R32 R33 R34 R35 R36,yes
 12,1nF,Capacitor_SMD:C_0805_2012Metric,C40 C41 C42 C43 C44 C45 C46 C47 C48 C49 C50 C51,yes
-1,DD-50 female R/A (robot cable),Scorbot:DD50_Female_Horizontal_P2.77x2.84mm,J4,yes
+1,DD-50 female R/A (robot cable),Scorbot:DD50_Female_Horizontal_P2.77x2.54mm_EdgePinOffset10.40mm,J4,yes
 4,M3,MountingHole:MountingHole_3.2mm_M3,H1 H2 H3 H4,yes

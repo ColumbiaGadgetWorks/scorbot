@@ -13,6 +13,7 @@ R0805 = "Resistor_SMD:R_0805_2012Metric"
 R1206 = "Resistor_SMD:R_1206_3216Metric"
 C0805 = "Capacitor_SMD:C_0805_2012Metric"
 C1206 = "Capacitor_SMD:C_1206_3216Metric"
+R2512 = "Resistor_SMD:R_2512_6332Metric"
 LED0805 = "LED_SMD:LED_0805_2012Metric"
 
 # ---------------------------------------------------------------------------
@@ -201,7 +202,7 @@ part("U2", "Scorbot:ESP32_DevKitC_V4", "ESP32-DevKitC (WROOM-32D or -32E, 38-pin
      "mcu", pcb=(14, 98, 270))
 R("R10", "10k", "NSLEEP", "GND", "mcu", pcb=(62, 100, 0))
 R("R11", "1k", "LED_STATUS", "LED_ST_A", "mcu", pcb=(62, 104, 0))
-LED("D6", "STATUS (blue)", "LED_ST_A", "GND", "mcu", pcb=(62, 108, 0))
+LED("D6", "STATUS (red)", "LED_ST_A", "GND", "mcu", pcb=(62, 108, 0))
 R("R12", "1k", "+3V3", "LED_3V3", "mcu", pcb=(62, 112, 0))
 LED("D7", "3V3 (green)", "LED_3V3", "GND", "mcu", pcb=(62, 116, 0))
 
@@ -262,7 +263,8 @@ for i in range(1, 7):
 # make them ESP32-safe. 1 nF + the ESP32 PCNT glitch filter handle noise.
 for i in range(1, 7):
     y0 = 44 + (i - 1) * 11
-    R(f"R{30 + i}", "47R 0.25W", "+5V", f"ENC{i}_VLED", "encoders", fp=R1206, pcb=(132, y0, 0))
+    # ~80 mA through 47 R from 5 V (IR LED drops ~1.2 V) = ~0.3 W: 2512, 1 W.
+    R(f"R{30 + i}", "47R 1W", "+5V", f"ENC{i}_VLED", "encoders", fp=R2512, pcb=(132, y0, 0))
     for k, sig in ((0, "P0"), (1, "P1")):
         n = (i - 1) * 2 + k
         R(f"R{40 + n}", "4.7k", "+3V3", f"ENC{i}_{sig}", "encoders", pcb=(140, y0 + k * 3, 0))
@@ -286,7 +288,7 @@ db[DB50_GRIPPER_SW_NC] = None
 for p in DB50_UNUSED:
     db[p] = None
 part("J4", "Scorbot:DD50_Female", "DD-50 female R/A (robot cable)",
-     "Scorbot:DD50_Female_Horizontal_P2.77x2.84mm", db, "db50", pcb=(170, 54, 90))
+     "Scorbot:DD50_Female_Horizontal_P2.77x2.54mm_EdgePinOffset10.40mm", db, "db50", pcb=(170, 54, 90))
 
 # ---- Power flags + mounting holes -------------------------------------------
 for k, net in enumerate(["GND", "VIN", "VIN_RAW", "VM", "+5V_DK"]):

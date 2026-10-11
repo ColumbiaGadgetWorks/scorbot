@@ -76,7 +76,7 @@ def db50_symbol():
     names = D.db50_pin_names()
     left = [(n, names[n], "passive") for n in range(1, 26)]
     right = [(n, names[n], "passive") for n in range(26, 51)]
-    return symbol("DD50_Female", "J", "DD-50 female", "Scorbot:DD50_Female_Horizontal_P2.77x2.84mm",
+    return symbol("DD50_Female", "J", "DD-50 female", "Scorbot:DD50_Female_Horizontal_P2.77x2.54mm_EdgePinOffset10.40mm",
                   left, right, width=25.4,
                   desc="DD-50 (3-row D-sub) female, robot cable. Pin names follow the SCORBOT-ER 4u manual ch. 8")
 
@@ -185,13 +185,16 @@ def carrier_fp():
 
 
 def db50_fp():
-    """3-row DD-50 female, right angle. Pin 1 at origin, row 1 runs -X like the
-    KiCad DSUB-xx_Female_Horizontal_P2.77x2.84mm footprints; mating face +Y."""
-    name = "DD50_Female_Horizontal_P2.77x2.84mm"
-    p, r = 2.77, 2.84
-    edge = 9.4 + 2 * r  # PCB edge (connector flange) relative to row 1
-    L = fp_header(name, "DD-50 (3-row D-sub, 50 pin) female, right angle, THT, pitch 2.77x2.84mm. "
-                  "Check against your connector's drawing (row offset to edge, holes).",
+    """3-row DD-50 female, right angle, for Amphenol DD50S564TLF (stamped
+    contacts, termination type 5: "footprint/pitch 10.40/2.54 mm" per the
+    Amphenol ICC D-Sub brochure p.11). Pin 1 at origin, row 1 runs -X like the
+    KiCad DSUB-xx_Female_Horizontal footprints; mating face +Y. Rows are 2.54 mm
+    apart and the row nearest the flange (row 3) is 10.40 mm from it."""
+    name = "DD50_Female_Horizontal_P2.77x2.54mm_EdgePinOffset10.40mm"
+    p, r = 2.77, 2.54
+    edge = 10.40 + 2 * r  # PCB edge (connector flange) relative to row 1
+    L = fp_header(name, "DD-50 (3-row D-sub, 50 pin) female, right angle, THT, pitch 2.77x2.54mm, row 3 10.40mm "
+                  "from the flange (Amphenol DD50S564TLF). Bracket hole position not dimensioned in the brochure.",
                   "DD50 DB50 D-sub 50 female horizontal", (-22.16, -3.5), (-22.16, edge + 8))
     for k in range(17):
         L.append(pad(k + 1, -k * p, 0, size=1.6, first=(k == 0)))

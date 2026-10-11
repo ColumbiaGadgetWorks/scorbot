@@ -24,9 +24,11 @@ kicad-cli pcb export svg --layers F.Cu,F.SilkS,F.Fab,F.CrtYd,Edge.Cuts,Dwgs.User
 python3 -c "import cairosvg, sys; cairosvg.svg2png(url=sys.argv[1], write_to='../docs/pcb_placement.png', output_width=2000, background_color='white')" "$tmp/pcb.svg" \
   || echo "(pip install cairosvg for the PNG preview)"
 for side in F B; do
-  kicad-cli pcb export svg --layers $side.Cu,$side.SilkS,Edge.Cuts --page-size-mode 2 --exclude-drawing-sheet \
-    $( [ $side = B ] && echo --mirror ) -o "$tmp/$side.svg" ../scorbot_controller.kicad_pcb >/dev/null
-  python3 -c "import cairosvg, sys; cairosvg.svg2png(url=sys.argv[1], write_to=sys.argv[2], output_width=2400, background_color='white')" \
-    "$tmp/$side.svg" "../docs/pcb_routed_$side.png" || true
+  m=$( [ $side = B ] && echo --mirror || true )
+  kicad-cli pcb export svg --layers $side.Cu,Edge.Cuts --page-size-mode 2 --exclude-drawing-sheet $m \
+    -o "$tmp/$side.svg" ../scorbot_controller.kicad_pcb >/dev/null
+  kicad-cli pcb export svg --layers $side.SilkS,Edge.Cuts --black-and-white --page-size-mode 2 --exclude-drawing-sheet $m \
+    -o "$tmp/${side}s.svg" ../scorbot_controller.kicad_pcb >/dev/null
+  python3 preview.py "$tmp/$side.svg" "$tmp/${side}s.svg" "../docs/pcb_routed_$side.png" || true
 done
 echo "done"
