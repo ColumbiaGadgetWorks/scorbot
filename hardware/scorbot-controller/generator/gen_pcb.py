@@ -11,6 +11,7 @@ import uuid
 import pcbnew
 
 import design as D
+import silk_art
 import netclasses
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -20,6 +21,8 @@ NS = uuid.UUID("5c0b0a7e-4e5d-4c6a-9f00-5c0b0a7e4e5d")  # same namespace as gen_
 OX, OY = 30.0, 30.0  # board origin on the page (mm)
 W, H = D.BOARD_W, D.BOARD_H
 MM = pcbnew.FromMM
+LOGO_FRONT = (52.0, 92.0)   # board mm, centre of the CGW logo (F.SilkS)
+LOGO_BACK = (112.0, 88.0)   # board mm, centre of the Stealie (B.SilkS, mirrored)
 
 
 def symbol_uuid(ref, unit):
@@ -172,7 +175,7 @@ def build():
         seg.SetLayer(pcbnew.Edge_Cuts)
         seg.SetWidth(MM(0.1))
         board.Add(seg)
-    for txt, x, y, size in (("SCORBOT ER-4u ESP32 MASTER BOARD v0.3", 92, 91, 1.5),
+    for txt, x, y, size in (("SCORBOT ER-4u ESP32 MASTER BOARD v0.4", 92, 91, 1.5),
                             ("github.com/ColumbiaGadgetWorks/scorbot", 92, 94.5, 1.0)):
         t = pcbnew.PCB_TEXT(board)
         t.SetText(txt)
@@ -181,6 +184,13 @@ def build():
         t.SetTextSize(pcbnew.VECTOR2I(MM(size), MM(size)))
         t.SetTextThickness(MM(size * 0.15))
         board.Add(t)
+
+    # Logos: Columbia Gadget Works on the front, a Stealie on the back.
+    art = os.path.join(PROJ, "art")
+    silk_art.add_logo(board, os.path.join(art, "columbia_gadget_works_logo.png"), pcbnew.F_SilkS,
+                      LOGO_FRONT, 14.0, origin_mm=(OX, OY), mode="colored")
+    silk_art.add_logo(board, os.path.join(art, "stealie.png"), pcbnew.B_SilkS,
+                      LOGO_BACK, 34.0, origin_mm=(OX, OY), mode="colored", mirror=True)
 
     zone = pcbnew.ZONE(board)
     zone.SetLayer(pcbnew.B_Cu)

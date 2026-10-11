@@ -6,7 +6,7 @@ and the robot's DD-50 cable plugs straight into the board edge. JLCPCB
 places the SMD parts: passives, LEDs, the SS14, the TCA9555 I/O expander and
 two ADS1115 ADCs.
 
-**Status: v0.3, generated: schematic complete, carrier pinout verified, PCB placed and autorouted (needs a human review before ordering).**
+**Status: v0.4, generated: schematic complete, carrier and DD-50 footprints checked against their datasheets, PCB autorouted. Two LCSC numbers and the DD-50 bracket holes left to confirm before ordering.**
 
 | File | What it is |
 | --- | --- |
@@ -45,7 +45,7 @@ changes.
 
 ## Must check before ordering boards
 
-Done in v0.3:
+Done:
 
 - **Pololu carrier pinout** is taken from Pololu's labeled top view: left
   row VM, GND, EN, PH, PMODE, SLEEP, VREF; right row VIN, GND, OUT1, OUT2,
@@ -56,20 +56,26 @@ Done in v0.3:
   3V3 at the antenna end).
 - **Copper**: 1 oz. VIN/VM traces are 2.5 mm with 1.6/0.8 mm vias, motor
   traces 1.2 mm with 1.2/0.6 mm vias.
+- **DevKit row spacing** confirmed at 1.0" (25.4 mm).
+- **DD-50 footprint** follows Amphenol's D-Sub brochure for DD50S564TLF
+  (stamped contacts, termination type 5): tail rows 2.54 mm apart, the row
+  nearest the flange 10.40 mm from it, 2.77 mm pitch, 61.11 mm between the
+  shell holes.
+- **LCSC numbers** checked by search, except the two below.
 
 Still to check:
 
-1. **DevKit row spacing.** `DEVKIT_ROW_SPACING = 25.4` mm. Measure
-   between pin centres across the two rows with calipers.
-2. **DD-50 footprint** (Amphenol DD50S564TLF planned) is generated from
-   KiCad's D-sub geometry (pitch 2.77 x 2.84 mm, D-shell hole spacing
-   61.11 mm, flange 15.1 mm from row 1). Compare against the DD50S564TLF
-   drawing, or print the board 1:1 and lay the connector on it.
-3. **JLC part numbers** in `fab/jlc_bom.csv`: look each one up (see below).
-4. **Part orientation in JLC's placement preview** (see below).
-5. **Autorouted copper.** DRC-clean but not pretty; look over the VIN/VM
+1. **DD-50 bracket holes.** The brochure doesn't dimension the 50-way
+   plastic bracket, so the two 3.2 mm holes sit on the shell-hole centres
+   (61.11 mm apart), 12.94 mm behind the flange. Check against the part
+   (or Amphenol's DD50S564TLF drawing) before ordering.
+2. **Two LCSC numbers to pick** in `generator/gen_fab.py`: the TCA9555PWR
+   (C465732 turned out to be a different chip) and a 47 R 1 W 2512
+   resistor for R31-R36.
+3. **Part orientation in JLC's placement preview** (see below).
+4. **Autorouted copper.** DRC-clean but not pretty; look over the VIN/VM
    and MOT paths, and the long parallel runs across the middle.
-6. **Screw terminal wire entry** (J2, J3, J7) should face the board edge.
+5. **Screw terminal wire entry** (J2, J3, J7) should face the board edge.
    Check in KiCad's 3D viewer.
 
 Fit by hand, one of each pair:
@@ -78,6 +84,14 @@ Fit by hand, one of each pair:
   reverse-polarity / over-voltage clamp. Neither is placed by JLC.
 - **F1 (blade fuse holder) or J7 (screw terminal + inline fuse)**.
 - **J1 (barrel jack) or J2 (screw terminal)** for the 12 V input.
+
+## Silkscreen art
+
+`art/columbia_gadget_works_logo.png` (front) and `art/stealie.png` (back)
+are turned into filled silkscreen by `generator/silk_art.py` when the board
+is generated. Positions and heights are `LOGO_FRONT` / `LOGO_BACK` in
+`gen_pcb.py`. Silkscreen is one colour: every non-white area of the image
+prints.
 
 ## Ordering at JLCPCB
 
@@ -96,8 +110,8 @@ For each line of `fab/jlc_bom.csv`, search the LCSC number at
 
 - value and package match the Comment and Footprint columns (0805, 1206,
   SMA, TSSOP-24, MSOP/VSSOP-10);
-- capacitors are X7R/X5R and 25 V or more; the 1206 47 R resistors are
-  rated 0.25 W;
+- capacitors are X7R/X5R and 25 V or more; R31-R36 are 47 R, 2512, 1 W
+  (they dissipate about 0.3 W each);
 - Basic vs Extended (each Extended part adds a one-off loading fee, about
   $1.50-3);
 - stock covers (quantity x number of boards).
@@ -114,7 +128,8 @@ and check:
   pin-1 marker of the footprint.
 - **D5 (SS14)**: the cathode band is on the pad marked as cathode (toward
   the DevKit's 5 V feed).
-- **LEDs D3, D4, D6, D7**: the cathode mark faces the GND side.
+- **LEDs D3, D4, D6, D7** (green, green, red, green): the cathode mark
+  faces the GND side.
 - Resistors and capacitors have no polarity.
 
 If a part is turned the wrong way, rotate it in JLC's tool (or add 90/180 to

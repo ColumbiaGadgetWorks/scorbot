@@ -78,7 +78,7 @@
   (symbol "DD50_Female" (in_bom yes) (on_board yes)
     (property "Reference" "J" (at -12.70 34.29 0) (effects (font (size 1.27 1.27)) (justify left)))
     (property "Value" "DD-50 female" (at -12.70 -34.29 0) (effects (font (size 1.27 1.27)) (justify left)))
-    (property "Footprint" "Scorbot:DD50_Female_Horizontal_P2.77x2.84mm" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
+    (property "Footprint" "Scorbot:DD50_Female_Horizontal_P2.77x2.54mm_EdgePinOffset10.40mm" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
     (property "ki_description" "DD-50 (3-row D-sub) female, robot cable. Pin names follow the SCORBOT-ER 4u manual ch. 8" (at 0 0 0) (effects (font (size 1.27 1.27)) hide))
     (symbol "DD50_Female_0_1"
