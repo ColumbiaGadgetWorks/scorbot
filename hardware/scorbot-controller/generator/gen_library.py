@@ -93,16 +93,9 @@ def buck_symbol():
                          "4-pin socket (IN+, IN-, OUT-, OUT+) for a DROK mini buck module set to 5 V")
 
 
-def ads1115_symbol():
-    return module_symbol("ADS1115_Module", "ADS1115 module", "Scorbot:ADS1115_Module_Socket",
-                         D.ADS1115_PINS, {"VDD": "power_in", "GND": "power_in", "SDA": "bidirectional",
-                                          "SCL": "input", "ALRT": "open_collector"},
-                         "Generic ADS1115 4-channel 16-bit I2C ADC breakout, 10-pin 0.1in header. PIN ORDER VARIES BY SELLER")
-
-
 def write_symbols():
     text = ["(kicad_symbol_lib (version 20220914) (generator scorbot_gen)",
-            devkit_symbol(), carrier_symbol(), db50_symbol(), buck_symbol(), ads1115_symbol(), ")"]
+            devkit_symbol(), carrier_symbol(), db50_symbol(), buck_symbol(), ")"]
     with open(os.path.join(LIB, "Scorbot.kicad_sym"), "w") as f:
         f.write("\n".join(text) + "\n")
 
@@ -174,8 +167,8 @@ def carrier_fp():
     rows = D.CARRIER_ROWS
     s = D.CARRIER_ROW_SPACING
     longest = max(len(r) for r in rows)
-    L = fp_header(name, "PLACEHOLDER pin order: socket for Pololu #4035 DRV8874 carrier. Verify against the carrier pinout.",
-                  "Pololu DRV8874 carrier socket", (s / 2, -3.5), (s / 2, longest * 2.54 + 2))
+    L = fp_header(name, "Socket (2x 1x7 female, rows 12.7 mm apart) for a Pololu #4035 DRV8874 carrier, components up. Pin order from Pololu's labeled top view.",
+                  "Pololu DRV8874 carrier socket", (s / 2, -3.4), (s / 2, longest * 2.54 + 2))
     n = 1
     for c, row in enumerate(rows):
         for k, pname in enumerate(row):
@@ -185,7 +178,8 @@ def carrier_fp():
     x1, x2 = -1.27 - 1.27, s + 2.54
     y1, y2 = -2.54, (longest - 1) * 2.54 + 2.54
     L.append(fp_rect(x1, y1, x2, y2, "F.SilkS", 0.12))
-    L.append(fp_text("PINOUT UNVERIFIED", s / 2, (longest - 1) * 2.54 / 2, "F.SilkS", 0.8))
+    L.append(fp_text("VM", 0, -3.4, "F.SilkS", 0.8))      # orientation marks: VM top-left,
+    L.append(fp_text("VIN", s, -3.4, "F.SilkS", 0.8))     # VIN top-right (as on the carrier)
     L.append(fp_rect(x1 - 0.25, y1 - 0.25, x2 + 0.25, y2 + 0.25, "F.CrtYd", 0.05))
     write_fp(name, L)
 
@@ -244,8 +238,6 @@ def main():
     single_row_fp("Buck_Module_4pin_Socket", D.BUCK_PINS,
                   "1x4 socket (IN+, IN-, OUT-, OUT+) for a DROK mini buck; its EN pin hangs past pin 1 unconnected",
                   body_w=22.0, before=1, verified=True)
-    single_row_fp("ADS1115_Module_Socket", D.ADS1115_PINS,
-                  "1x10 socket in Adafruit #1085 ADS1115 pin order. Other sellers differ", body_w=17.0, verified=True)
     db50_fp()
     print("library written to", os.path.normpath(LIB))
 

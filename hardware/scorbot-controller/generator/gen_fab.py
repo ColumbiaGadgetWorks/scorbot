@@ -5,7 +5,8 @@
     jlc_cpl.csv                                 Designator, Mid X, Mid Y, Layer, Rotation
 
 Only SMD parts on the top side go into the JLC BOM/CPL; through-hole parts,
-sockets and DNP resistors are hand-soldered or left empty.
+sockets, DNP resistors and parts marked hand=True (the D1/D8 TVS choice) are
+hand-soldered or left empty.
 
 LCSC numbers below are from memory/search snapshots (JLCPCB's site was not
 reachable when this was written): check each one in JLCPCB's parts library
@@ -43,6 +44,7 @@ LCSC = {
     ("SS14", "Diode_SMD:D_SMA"): "C2480",
     ("SMBJ18A", "Diode_SMD:D_SMB"): "C168805",            # Extended
     ("TCA9555PWR", "Package_SO:TSSOP-24_4.4x7.8mm_P0.65mm"): "C465732",  # Extended
+    ("ADS1115IDGSR", "Package_SO:TSSOP-10_3x3mm_P0.5mm"): "C37593",       # Extended
 }
 
 
@@ -53,11 +55,18 @@ def lcsc(p):
     return ""
 
 
+def comment(p):
+    """Short JLC BOM comment: 'green LED' for LEDs, else the value without its note."""
+    if p["fp"] == D.LED0805:
+        return p["value"].split("(")[-1].rstrip(")") + " LED 0805"
+    return p["value"].split(" (")[0]
+
+
 def smd_parts():
     out = []
     for p in D.PARTS:
         fp = p["fp"] or ""
-        if p.get("dnp") or not fp or p["ref"].startswith(("#", "H")):
+        if p.get("dnp") or p.get("hand") or not fp or p["ref"].startswith(("#", "H")):
             continue
         if fp.split(":")[0] in ("Resistor_SMD", "Capacitor_SMD", "LED_SMD", "Diode_SMD", "Package_SO"):
             out.append(p)
@@ -82,15 +91,17 @@ def main():
 
     parts = smd_parts()
     groups = {}
-    for p in parts:
-        key = (p["value"], p["fp"].split(":")[1], lcsc(p))
-        groups.setdefault(key, []).append(p["ref"])
-    missing = [refs for (v, fp, l), refs in groups.items() if not l]
+    for p in parts:  # one line per LCSC part (or per value when there is none)
+        part = lcsc(p)
+        key = (part or p["value"], p["fp"].split(":")[1], part)
+        groups.setdefault(key, []).append(p)
+    missing = [[p["ref"] for p in ps] for (v, fp, l), ps in groups.items() if not l]
     with open(os.path.join(FAB, "jlc_bom.csv"), "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["Comment", "Designator", "Footprint", "LCSC Part #"])
-        for (value, fp, part), refs in groups.items():
-            w.writerow([value, ",".join(refs), fp, part])
+        for (_, fp, part), ps in groups.items():
+            values = list(dict.fromkeys(comment(p) for p in ps))
+            w.writerow([" / ".join(values), ",".join(p["ref"] for p in ps), fp, part])
 
     # placement: KiCad's position file, renamed to JLC's columns
     tmp = tempfile.mkdtemp()
