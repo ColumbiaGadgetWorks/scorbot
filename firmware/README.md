@@ -9,7 +9,9 @@ It runs on an ESP32-DevKitC with either the WROOM-32D or the WROOM-32E module. B
 The `control` task runs on core 1 at 1 kHz. It does the following:
 - Reads the six quadrature encoders (PCNT, x4 counting).
 - Runs PID with synchronized trapezoid moves.
-- Drives the six DRV8874 boards with 20 kHz PWM.
+- Drives the six Pololu #4036 DRV8876 boards with 20 kHz PWM. CS reads
+  2.49 V/A; the drivers limit current at about 1.33 A and the software trips
+  at 1.2 A (settable in the UI).
 - Handles the wrist as a differential pair: pitch = (m4+m5)/2, roll = (m4-m5)/2.
 
 The `io` task runs on core 0 at 500 Hz. It reads these over I2C:
@@ -18,7 +20,7 @@ The `io` task runs on core 0 at 500 Hz. It reads these over I2C:
 
 Safety checks:
 - The E-stop removes VM. The firmware latches an `estop` mode until you clear it.
-- It also faults on DRV nFAULT, over-current (filtered over 50 ms) and following error.
+- It also faults on DRV nFAULT, over-current (sustained for 500 ms) and following error.
 
 Networking:
 - WiFi station mode. If it can't connect within 60 s, it also opens the AP `Scorbot-XXXX` (password `scorbot1`) with a captive portal at 192.168.4.1.

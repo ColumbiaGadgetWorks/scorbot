@@ -85,6 +85,8 @@ void BindGlobals(Io io, RobotConfig& c) {
   io.f("test_duty", c.test_duty);
   io.i("test_ms", c.test_ms);
   io.f("current_limit_a", c.current_limit_a);
+  // a trip at or above the driver's own limit would never fire
+  if (c.current_limit_a <= 0 || c.current_limit_a >= scorbot::kDriverCurrentLimitA) c.current_limit_a = RobotConfig{}.current_limit_a;
   io.f("gripper_open_mm", c.gripper_open_mm);
   io.i("jog_timeout_ms", c.jog_timeout_ms);
 }

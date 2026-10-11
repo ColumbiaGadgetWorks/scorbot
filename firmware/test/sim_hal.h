@@ -25,6 +25,7 @@ struct SimArm : Hal {
   float mcount[kMotors] = {};  // motor shaft position in counts
   float duty[kMotors] = {};
   bool enabled = false, stalled[kMotors] = {};
+  float extra_amps[kMotors] = {};  // added load current, for the over-current trip
   uint32_t t_ms = 0;
   float t_acc = 0;
 
@@ -82,7 +83,7 @@ struct SimArm : Hal {
   bool motorPowerOk() override { return vm; }
   float current(int m) override {
     if (!enabled || !vm) return 0.f;
-    return std::fabs(duty[m]) * (stalled[m] ? 2.0f : 0.6f);
+    return std::fmin(std::fabs(duty[m]) * (stalled[m] ? 2.0f : 0.6f) + extra_amps[m], kDriverCurrentLimitA);  // driver chops at its limit
   }
   float motorVolts() override { return vm ? 12.1f : 0.2f; }
   uint32_t millis() override { return t_ms; }
