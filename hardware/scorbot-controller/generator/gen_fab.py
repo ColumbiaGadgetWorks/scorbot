@@ -47,6 +47,15 @@ LCSC = {
     ("ADS1115IDGSR", "Package_SO:TSSOP-10_3x3mm_P0.5mm"): "C37593",       # Extended
 }
 
+# JLC's part models sit at a different zero rotation from KiCad's footprints.
+# Checked in JLC's placement preview: their TSSOPs are drawn with the pins
+# along the top and bottom and pin 1 at bottom left, so they need -90 degrees.
+# The SMA diode and 0805 LEDs matched KiCad with no correction.
+ROT_FIX = {
+    "Package_SO:TSSOP-24_4.4x7.8mm_P0.65mm": -90,
+    "Package_SO:TSSOP-10_3x3mm_P0.5mm": -90,
+}
+
 
 def lcsc(p):
     for (val, fp), part in LCSC.items():
@@ -108,14 +117,15 @@ def main():
     pos = os.path.join(tmp, "pos.csv")
     subprocess.run(["kicad-cli", "pcb", "export", "pos", "--format", "csv", "--units", "mm", "--side", "front",
                     "--smd-only", "-o", pos, PCB], check=True, stdout=subprocess.DEVNULL)
-    wanted = {p["ref"] for p in parts}
+    wanted = {p["ref"]: p["fp"] for p in parts}
     with open(pos) as f, open(os.path.join(FAB, "jlc_cpl.csv"), "w", newline="") as g:
         w = csv.writer(g)
         w.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
         n = 0
         for row in csv.DictReader(f):
             if row["Ref"] in wanted:
-                w.writerow([row["Ref"], row["PosX"] + "mm", row["PosY"] + "mm", "Top", row["Rot"]])
+                rot = (float(row["Rot"]) + ROT_FIX.get(wanted[row["Ref"]], 0)) % 360
+                w.writerow([row["Ref"], row["PosX"] + "mm", row["PosY"] + "mm", "Top", f"{rot:.6f}"])
                 n += 1
     print(f"fab: gerbers -> {os.path.relpath(zpath, PROJ)}, {len(parts)} SMD parts in {len(groups)} BOM lines,"
           f" {n} placements" + (f"; NO LCSC number for {missing}" if missing else ""))
