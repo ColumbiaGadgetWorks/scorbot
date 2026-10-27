@@ -1,0 +1,62 @@
+# Builds the controller firmware for every motor-driver variant and publishes
+# it as the "firmware-latest" release, which flasher/serve.py downloads.
+name: firmware
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "firmware/**"
+      - "flasher/build_firmware.py"
+      - ".github/workflows/firmware.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Robot core tests (all three driver settings)
+        run: |
+          make -C firmware/test run
+          for d in SCORBOT_POLOLU_4035 SCORBOT_DRV8876; do
+            g++ -std=c++17 -O2 -Wall -Wextra -D$d -Ifirmware/main firmware/test/test_core.cpp \
+              firmware/main/core/robot.cpp firmware/main/core/config.cpp -o /tmp/t && /tmp/t
+          done
+
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.3.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build all driver variants
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          python3 flasher/build_firmware.py --out dist/firmware --zip dist/scorbot-firmware.zip \
+            --version "$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scorbot-firmware
+          path: dist/scorbot-firmware.zip
+
+  release:
+    if: github.ref == 'refs/heads/main'
+    needs: [host-tests, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: scorbot-firmware
+      - name: Replace the firmware-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete firmware-latest -R "$GITHUB_REPOSITORY" -y --cleanup-tag || true
+          gh release create firmware-latest scorbot-firmware.zip -R "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --prerelease --title "Latest firmware (main)" \
+            --notes "Built from ${GITHUB_SHA} on $(date -u '+%Y-%m-%d %H:%M UTC'). Install it with: python3 flasher/serve.py --download"

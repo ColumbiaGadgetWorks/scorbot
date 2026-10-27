@@ -37,7 +37,11 @@ The web UI is one file, `web/index.html`, embedded in the firmware. It has four 
 
 ## Build and flash
 
-You need ESP-IDF 5.3 or newer.
+The easy way: run `python3 flasher/serve.py` and follow the steps in the
+browser (see `flasher/README.md`). It installs the latest build from GitHub
+Actions.
+
+To build and flash it yourself, you need ESP-IDF 5.3 or newer.
 
 ```
 cd firmware

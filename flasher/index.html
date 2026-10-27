@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scorbot Firmware Installer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%231f6feb%22/%3E%3Cpath d=%22M9 2 4 9h3l-1 5 5-7H8z%22 fill=%22white%22/%3E%3C/svg%3E">
+<script type="module" src="vendor/esp-web-tools/install-button.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1d232b; --muted: #5d6875; --line: #dfe3e8;
+    --accent: #1f6feb; --accent-text: #ffffff; --ok: #1a7f37; --ok-bg: #e6f4ea;
+    --warn: #9a6700; --warn-bg: #fff4d6; --bad: #b42318; --bad-bg: #fde8e7; --code: #eef1f4;
+    --mdc-theme-primary: #1f6feb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1419; --card: #171d24; --text: #e6e9ed; --muted: #9aa5b1; --line: #2a333d;
+      --accent: #4c8dff; --accent-text: #0b0f14; --ok: #4ac26b; --ok-bg: #12261a;
+      --warn: #e3b341; --warn-bg: #2a2212; --bad: #f47067; --bad-bg: #2d1615; --code: #222a33;
+      --mdc-theme-primary: #4c8dff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  header h1 { margin: 0 0 4px; font-size: 1.6rem; }
+  header p { margin: 0; color: var(--muted); }
+  .version { font-size: .85rem; color: var(--muted); margin-top: 6px; }
+  ol.steps { list-style: none; padding: 0; margin: 28px 0 0; counter-reset: step; }
+  ol.steps > li { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+                  padding: 18px 20px 18px 64px; margin-bottom: 14px; position: relative; counter-increment: step; }
+  ol.steps > li::before { content: counter(step); position: absolute; left: 18px; top: 16px; width: 30px; height: 30px;
+                          border-radius: 50%; background: var(--accent); color: var(--accent-text);
+                          display: grid; place-items: center; font-weight: 700; }
+  ol.steps > li.done::before { content: "✓"; background: var(--ok); }
+  h2 { margin: 2px 0 8px; font-size: 1.12rem; }
+  p { margin: 6px 0; }
+  .muted { color: var(--muted); }
+  .note { border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+  .note.ok { background: var(--ok-bg); color: var(--ok); }
+  .note.warn { background: var(--warn-bg); color: var(--warn); }
+  .note.bad { background: var(--bad-bg); color: var(--bad); }
+  .variants { display: grid; gap: 10px; margin-top: 10px; }
+  .variant { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px;
+             padding: 12px 14px; cursor: pointer; }
+  .variant:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .variant input { margin-top: 5px; accent-color: var(--accent); }
+  .variant b { display: block; }
+  .variant span { color: var(--muted); font-size: .92rem; }
+  ul.check { list-style: none; padding: 0; margin: 8px 0; }
+  ul.check li { margin: 8px 0; }
+  ul.check label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+  ul.check input { margin-top: 5px; accent-color: var(--accent); flex: none; }
+  code { background: var(--code); padding: 1px 6px; border-radius: 5px; font-size: .9em; }
+  a { color: var(--accent); }
+  .install-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 12px 0 4px; }
+  button.primary, .install-row button { font: inherit; font-weight: 600; border: 0; border-radius: 999px; cursor: pointer;
+                   padding: 10px 22px; background: var(--accent); color: var(--accent-text); }
+  button.secondary { font: inherit; border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
+                     padding: 8px 18px; background: transparent; color: var(--text); }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--muted); }
+  ol.inner { margin: 8px 0; padding-left: 22px; }
+  ol.inner li { margin: 4px 0; }
+  footer { margin-top: 28px; color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Scorbot ER-4u controller: install firmware</h1>
+    <p>Puts the controller firmware on the ESP32 DevKit over USB, straight from this page.</p>
+    <div class="version" id="version"></div>
+  </header>
+
+  <div id="global"></div>
+
+  <ol class="steps">
+    <li id="s-browser">
+      <h2>Check your browser</h2>
+      <div id="browser-msg"></div>
+    </li>
+
+    <li id="s-variant">
+      <h2>Pick your motor drivers</h2>
+      <p class="muted">All six driver boards on the controller must be the same kind. This sets how the
+        firmware reads motor current. You can re-install later to change it.</p>
+      <div class="variants" id="variants"></div>
+    </li>
+
+    <li id="s-prepare">
+      <h2>Get the controller ready</h2>
+      <ul class="check">
+        <li><label><input type="checkbox" class="prep"> <span><b>Motor power off.</b> Press the E-stop or switch off the
+          12 V supply. The ESP32 restarts during the install, and the motors should not be able to move.</span></label></li>
+        <li><label><input type="checkbox" class="prep"> <span><b>USB cable in.</b> Plug the ESP32 DevKit on the controller
+          into this computer. Use a data cable: some phone-charging cables only carry power.</span></label></li>
+        <li><label><input type="checkbox" class="prep"> <span><b>Nothing else is using the port.</b> Close Arduino IDE,
+          a serial monitor, or another tab running this installer.</span></label></li>
+      </ul>
+      <details>
+        <summary>The port doesn't show up?</summary>
+        <ol class="inner">
+          <li>Try another cable and another USB port.</li>
+          <li>Install the USB driver for the chip next to the DevKit's USB socket:
+            <b>CP2102</b> (<a href="https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers" target="_blank" rel="noopener">Silicon Labs CP210x driver</a>)
+            or <b>CH340/CH9102</b> (<a href="https://www.wch-ic.com/downloads/CH341SER_EXE.html" target="_blank" rel="noopener">WCH driver</a>).
+            macOS and Linux usually need none.</li>
+          <li>On Linux, add yourself to the <code>dialout</code> group (<code>sudo usermod -aG dialout $USER</code>), then log out and back in.</li>
+        </ol>
+      </details>
+    </li>
+
+    <li id="s-install">
+      <h2>Install</h2>
+      <p>Click <b>Connect</b>, pick the serial port (often named <i>CP2102</i>, <i>USB Serial</i> or <i>usbserial</i>),
+        then choose <b>Install</b> in the window that opens.</p>
+      <div class="note warn" id="erase-note"><b>Erase or not?</b> On a <b>first install</b>, say yes to erasing.
+        For an <b>update</b>, say no: erasing also deletes your Wi-Fi settings and the arm's calibration.</div>
+      <div class="install-row">
+        <esp-web-install-button id="installer">
+          <button slot="activate">Connect</button>
+          <span slot="unsupported" class="note bad">This browser can't talk to serial ports. Use Chrome or Edge on a desktop computer.</span>
+          <span slot="not-allowed" class="note bad">Open this page from <code>http://localhost</code> (run <code>python3 flasher/serve.py</code>), not as a file.</span>
+        </esp-web-install-button>
+        <span class="muted" id="install-target"></span>
+      </div>
+      <details>
+        <summary>It says "Failed to connect" or hangs at "Connecting…"</summary>
+        <ol class="inner">
+          <li>Click <b>Connect</b> again, and this time <b>hold the BOOT button</b> on the DevKit (next to the USB socket)
+            until the progress bar starts moving, then let go.</li>
+          <li>Still stuck: unplug the USB cable, hold BOOT, plug it back in, release BOOT, then Connect.</li>
+          <li>Install takes about a minute. Don't unplug until it says it's done.</li>
+        </ol>
+      </details>
+      <p class="muted">Afterwards, <b>Logs &amp; Console</b> in the same window shows what the controller prints while it starts.</p>
+      <button class="secondary" id="installed">It's installed: next step</button>
+    </li>
+
+    <li id="s-connect">
+      <h2>Connect to the controller</h2>
+      <ol class="inner">
+        <li>The controller restarts. With no Wi-Fi settings yet, it starts its own network
+          <b><code>Scorbot-XXXX</code></b>, password <b><code>scorbot1</code></b>. Join it from your computer or phone.</li>
+        <li>A setup page should pop up. If not, open <a href="http://192.168.4.1" target="_blank" rel="noopener">http://192.168.4.1</a>.</li>
+        <li>Under <b>Settings → WiFi</b>, enter your own network. After that the controller is at
+          <a href="http://scorbot.local" target="_blank" rel="noopener">http://scorbot.local</a> on your network
+          (or at the IP your router gives it).</li>
+      </ol>
+    </li>
+
+    <li id="s-first">
+      <h2>First run with the arm</h2>
+      <p class="muted">Turn motor power back on (release the E-stop), then in the controller's web page:</p>
+      <ol class="inner">
+        <li><b>Test → Self-test.</b> Fix any motor marked "disagree" with <b>Flip</b>.</li>
+        <li>Check each home switch with the switch lamps.</li>
+        <li><b>Calibrate → Measure travel</b> for each joint, then <b>Apply</b>.</li>
+        <li><b>Home all.</b></li>
+      </ol>
+    </li>
+  </ol>
+
+  <footer>
+    Uses <a href="https://github.com/esphome/esp-web-tools" target="_blank" rel="noopener">ESP Web Tools</a> (Apache-2.0), included in this folder.
+    Firmware source: <code>firmware/</code>. To rebuild: <code>python3 flasher/serve.py --build</code>.
+  </footer>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+
+// 1. browser
+(function browserCheck() {
+  const msg = $("#browser-msg");
+  if (location.protocol === "file:") {
+    msg.innerHTML = '<div class="note bad">This page was opened as a file. Run <code>python3 flasher/serve.py</code> and use the page it opens.</div>';
+  } else if (!("serial" in navigator)) {
+    msg.innerHTML = '<div class="note bad">This browser has no Web Serial. Use <b>Chrome</b> or <b>Edge</b> on Windows, macOS or Linux.</div>';
+  } else if (!window.isSecureContext) {
+    msg.innerHTML = '<div class="note bad">Serial access needs <code>http://localhost</code> or HTTPS.</div>';
+  } else {
+    msg.innerHTML = '<div class="note ok">Good to go: this browser can flash over USB.</div>';
+    $("#s-browser").classList.add("done");
+  }
+})();
+
+// 2. variants
+let variants = [];
+function choose(id) {
+  const v = variants.find((x) => x.id === id) || variants[0];
+  if (!v) return;
+  store.set("scorbot.variant", v.id);
+  $("#installer").setAttribute("manifest", v.manifest);
+  $("#install-target").textContent = "Installs: " + v.name;
+  $("#s-variant").classList.add("done");
+}
+fetch("firmware/index.json", { cache: "no-store" })
+  .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then((idx) => {
+    variants = idx.variants;
+    $("#version").textContent = `Firmware ${idx.version} · built ${idx.built} · ${idx.chip}`;
+    const saved = store.get("scorbot.variant");
+    const pick = variants.some((v) => v.id === saved) ? saved : variants[0].id;
+    $("#variants").innerHTML = variants.map((v) => `
+      <label class="variant"><input type="radio" name="variant" value="${v.id}" ${v.id === pick ? "checked" : ""}>
+        <div><b>${v.name}</b><span>${v.description}</span></div></label>`).join("");
+    $("#variants").addEventListener("change", (e) => choose(e.target.value));
+    choose(pick);
+  })
+  .catch(() => {
+    $("#global").innerHTML = `<div class="note bad"><b>No firmware found.</b> Stop the server and run
+      <code>python3 flasher/serve.py --download</code> for the latest build from GitHub,
+      or <code>python3 flasher/serve.py --build</code> to build it yourself.</div>`;
+    $("#variants").innerHTML = '<p class="muted">(no firmware loaded)</p>';
+  });
+
+// 3. preparation checklist
+const preps = [...document.querySelectorAll(".prep")];
+preps.forEach((c) => c.addEventListener("change", () =>
+  $("#s-prepare").classList.toggle("done", preps.every((x) => x.checked))));
+
+// 4. install
+$("#installed").addEventListener("click", () => {
+  $("#s-install").classList.add("done");
+  $("#s-connect").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+</script>
+</body>
+</html>
