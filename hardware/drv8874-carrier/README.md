@@ -43,18 +43,22 @@ It follows Pololu's DRV887x carrier schematic, with two changes:
 - **No reverse-voltage MOSFET.** The master board already has reverse-polarity
   protection, so VIN and VM are tied together on the carrier. Don't use this
   carrier on its own without other protection.
-- **One 100 nF on VM instead of two, and VCP uses 100 nF** (TI's
-  recommended value; Pololu fits 220 nF).
+- **VCP uses 100 nF** (TI's recommended value; Pololu fits 220 nF).
+- **JLC Basic parts wherever possible**, so the DRV8874 is the only Extended
+  part: 10 uF 25 V 0805 bulk capacitors (Pololu uses 4.7 uF), a 0402 22 nF
+  charge-pump capacitor, and **2.4 k on CS instead of 2.49 k**. CS therefore
+  reads 1.08 V/A (Pololu: 1.12) and the current limit is about 3.1 A (Pololu:
+  about 2.9 A). The firmware's default driver setting matches this board.
 
 | Ref | Part | LCSC | Notes |
 |---|---|---|---|
 | U1 | DRV8874PWPR (HTSSOP-16) | C1855818 | Extended part |
-| C1, C2 | 10 uF 50 V X5R 1206 | C13585 | VM bulk |
-| C3 | 100 nF 50 V 0603 | C14663 | VM bypass |
-| C5 | 22 nF 50 V 0603 | C77571 | Charge-pump flying cap (CPH-CPL), Extended part |
+| C1, C2 | 10 uF 25 V X5R 0805 | C15850 | VM bulk |
+| C3, C4 | 100 nF 50 V 0603 | C14663 | VM bypass (C3 by the VM pin, C4 by the VM header pin) |
+| C5 | 22 nF 50 V X7R 0402 | C1532 | Charge-pump flying cap (CPH-CPL) |
 | C6 | 100 nF 50 V 0603 | C14663 | VCP to VM |
 | R2 | 10 k 0603 | C25804 | VREF pulled to SLEEP, as on Pololu's board |
-| R3 | 2.49 k 1% 0603 | C22908 | CS (IPROPI) to GND: 1.12 V/A, about 2.9 A limit at VREF = 3.3 V |
+| R3 | 2.4 k 1% 0603 | C22940 | CS (IPROPI) to GND: 1.08 V/A, about 3.1 A limit at VREF = 3.3 V |
 | R4 | 20 k 0603 | C4184 | IMODE to GND, as on Pololu's board |
 
 PMODE is left floating on the carrier, as on Pololu's board; the master
@@ -115,8 +119,8 @@ JLCPCB" (check that JLC offers assembly with that option for your order).
 ## After assembly
 
 - Solder two 1x7 male 0.1" headers, long pins down, components up.
-- Firmware: the default build is set for DRV8874 carriers (CS 1.12 V/A,
-  2.5 A software trip). See `firmware/README.md`.
+- Firmware: the default build is set for this carrier (CS 1.08 V/A, 2.5 A
+  software trip). See `firmware/README.md`.
 - First power-up: one carrier, motor disconnected, current-limited bench
   supply at 12 V. Check that VM draws a few mA, then try a motor from the
   web UI's motor test.

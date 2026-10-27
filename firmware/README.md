@@ -9,11 +9,12 @@ It runs on an ESP32-DevKitC with either the WROOM-32D or the WROOM-32E module. B
 The `control` task runs on core 1 at 1 kHz. It does the following:
 - Reads the six quadrature encoders (PCNT, x4 counting).
 - Runs PID with synchronized trapezoid moves.
-- Drives six DRV8874 carriers (Pololu #4035 or the clone in
-  `hardware/drv8874-carrier`) with 20 kHz PWM. CS reads 1.12 V/A; the drivers
-  limit current at about 2.9 A and the software trips at 2.5 A (settable in
-  the UI). For Pololu #4036 DRV8876 carriers, turn on "DRV8876 motor drivers"
-  in `idf.py menuconfig` (Scorbot menu): 2.49 V/A, 1.33 A limit, 1.2 A trip.
+- Drives six DRV8874 carriers with 20 kHz PWM. The default build is for the
+  carrier in `hardware/drv8874-carrier` (CS 1.08 V/A, about 3.1 A driver
+  limit, 2.5 A software trip, settable in the UI). For Pololu carriers, pick
+  "Motor driver carriers" in `idf.py menuconfig` (Scorbot menu): #4035
+  DRV8874 (1.12 V/A, about 2.9 A) or #4036 DRV8876 (2.49 V/A, 1.33 A limit,
+  1.2 A trip).
 - Handles the wrist as a differential pair: pitch = (m4+m5)/2, roll = (m4-m5)/2.
 
 The `io` task runs on core 0 at 500 Hz. It reads these over I2C:

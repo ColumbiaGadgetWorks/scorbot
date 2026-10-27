@@ -27,14 +27,15 @@ PER_PANEL = gf.COLS * gf.ROWS
 # LCSC -> (manufacturer, MPN, description)
 PARTS = {
     "C1855818": ("Texas Instruments", "DRV8874PWPR", "Brushed DC motor driver, 37 V 6 A, HTSSOP-16 with thermal pad"),
-    "C13585": ("Samsung Electro-Mechanics", "CL31A106KBHNNNE", "MLCC 10 uF 50 V X5R 10% 1206"),
+    "C15850": ("Samsung Electro-Mechanics", "CL21A106KAYNNNE", "MLCC 10 uF 25 V X5R 10% 0805"),
     "C14663": ("YAGEO", "CC0603KRX7R9BB104", "MLCC 100 nF 50 V X7R 10% 0603"),
-    "C77571": ("FH (Guangdong Fenghua)", "0603B223K500NT", "MLCC 22 nF 50 V X7R 10% 0603"),
+    "C1532": ("FH (Guangdong Fenghua)", "0402B223K500NT", "MLCC 22 nF 50 V X7R 10% 0402"),
     "C25804": ("UNI-ROYAL", "0603WAF1002T5E", "Resistor 10 k 1% 0.1 W 0603"),
-    "C22908": ("UNI-ROYAL", "0603WAF2491T5E", "Resistor 2.49 k 1% 0.1 W 0603"),
+    "C22940": ("UNI-ROYAL", "0603WAF2401T5E", "Resistor 2.4 k 1% 0.1 W 0603"),
     "C4184": ("UNI-ROYAL", "0603WAF2002T5E", "Resistor 20 k 1% 0.1 W 0603"),
 }
-PACKAGE = {"C_0603_1608Metric": "0603", "R_0603_1608Metric": "0603", "C_1206_3216Metric": "1206",
+PACKAGE = {"C_0603_1608Metric": "0603", "R_0603_1608Metric": "0603", "C_0805_2012Metric": "0805",
+           "C_0402_1005Metric": "0402",
            "HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm": "HTSSOP-16 (TI PWP)"}
 
 

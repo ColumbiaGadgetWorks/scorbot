@@ -12,20 +12,24 @@ constexpr int kJoints = 6;   // base, shoulder, elbow, wrist pitch, wrist roll, 
 constexpr int kMotors = 6;   // motor 4/5 drive pitch+roll through the differential wrist
 constexpr int kSwitches = 5; // home microswitches on joints 0..4 (gripper has none)
 
-// Motor driver carriers: all six the same, either DRV8874 (Pololu #4035 or
-// the clone in hardware/drv8874-carrier, the default) or DRV8876 (Pololu
-// #4036; menuconfig "Scorbot" or -DSCORBOT_DRV8876). Same pins; the current
-// mirror differs. CS has 2.49k, and the driver chops at VREF / (gain x 2.49k)
-// with VREF pulled to SLEEP (3.3 V).
-#if defined(SCORBOT_DRV8876) || defined(CONFIG_SCORBOT_DRV8876)
-constexpr const char* kDriverName = "DRV8876";
+// Motor driver carriers (all six the same type). Same pins; they differ in
+// the driver's current mirror and the CS resistor. The driver chops at
+// VREF / (V per A), with VREF pulled to SLEEP (3.3 V). Pick in menuconfig
+// ("Scorbot"), or with -DSCORBOT_POLOLU_4035 / -DSCORBOT_DRV8876 on the host.
+#if defined(SCORBOT_DRV8876) || defined(CONFIG_SCORBOT_DRIVER_POLOLU_4036)
+constexpr const char* kDriverName = "DRV8876 (Pololu #4036)";
 constexpr float kCsVoltsPerAmp = 2.49f;        // 1000 uA/A x 2.49k
 constexpr float kDriverCurrentLimitA = 1.33f;  // carrier rated 1.3 A continuous
 constexpr float kDefaultTripA = 1.2f;
-#else
-constexpr const char* kDriverName = "DRV8874";
+#elif defined(SCORBOT_POLOLU_4035) || defined(CONFIG_SCORBOT_DRIVER_POLOLU_4035)
+constexpr const char* kDriverName = "DRV8874 (Pololu #4035)";
 constexpr float kCsVoltsPerAmp = 1.12f;        // 450 uA/A x 2.49k
 constexpr float kDriverCurrentLimitA = 2.94f;  // carrier rated 2.1 A continuous
+constexpr float kDefaultTripA = 2.5f;
+#else  // hardware/drv8874-carrier (the default)
+constexpr const char* kDriverName = "DRV8874 (CGW carrier)";
+constexpr float kCsVoltsPerAmp = 1.08f;        // 450 uA/A x 2.4k (a JLC Basic value)
+constexpr float kDriverCurrentLimitA = 3.06f;
 constexpr float kDefaultTripA = 2.5f;
 #endif
 

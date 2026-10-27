@@ -14,7 +14,7 @@ Bare board
                    and 4 tooling holes.
 
 Assembly
-  SMT, top side only, 9 placements per board (54 per panel).
+  SMT, top side only, 10 placements per board (60 per panel).
   Bottom side has no parts. The 1x7 headers (J1, J2) are not fitted.
   U1 (DRV8874PWPR) has a thermal pad; solder it fully to the pad
   (solder-mask-defined opening, 2 paste windows, vias under the pad).

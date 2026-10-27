@@ -160,11 +160,12 @@ footprint to `ROT_FIX` in `generator/gen_fab.py`. It already turns the TSSOPs
 - **E-stop**: no relay; the NC contacts sit in the VM line (J3), so they must
   be rated for total motor current. Logic stays powered.
 - **Carrier current limit**: VREF is pulled to SLEEP (3.3 V) by 10 k on the
-  carrier and CS has 2.49 k. That gives about 2.9 A with DRV8874 carriers
-  (#4035 or `hardware/drv8874-carrier`), or about 1.33 A with #4036 DRV8876s.
+  carrier. CS has 2.4 k on the `hardware/drv8874-carrier` board (about
+  3.1 A) and 2.49 k on Pololu's (about 2.9 A with the #4035 DRV8874, about
+  1.33 A with the #4036 DRV8876).
   R21-R26 (DNP) lower it.
 - **Current sense**: two ADS1115IDGSR chips on the board (0x48: CS1-4,
-  0x49: CS5, CS6 and VM/5.7; ADDR strapped to GND / 3V3). CS reads 1.12 V/A on the DRV8874 (2.49 V/A on the DRV8876);
+  0x49: CS5, CS6 and VM/5.7; ADDR strapped to GND / 3V3). CS reads 1.08 V/A on the CGW carrier (1.12 V/A on a #4035, 2.49 V/A on a #4036);
   use the ADS1115's +/-4.096 V range.
 - Plan, firmware architecture and API: see the "Scorbot ER-4u ESP32
   Controller Plan" doc.

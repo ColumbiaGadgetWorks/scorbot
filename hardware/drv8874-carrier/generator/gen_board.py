@@ -42,7 +42,8 @@ DRV = {1: "EN", 2: "PH", 3: "SLEEP", 4: "FAULT", 5: "VREF", 6: "CS", 7: "IMODE",
 
 R0603 = ("Resistor_SMD", "R_0603_1608Metric")
 C0603 = ("Capacitor_SMD", "C_0603_1608Metric")
-C1206 = ("Capacitor_SMD", "C_1206_3216Metric")
+C0805 = ("Capacitor_SMD", "C_0805_2012Metric")
+C0402 = ("Capacitor_SMD", "C_0402_1005Metric")
 
 # ref, value, footprint, pad nets, (x, y, rot) in board mm, LCSC part
 # DRV8874 position (rotated 90 deg: pins 1-8 along the bottom, pin 1 at left)
@@ -60,13 +61,14 @@ def bot_x(pin):
 
 PARTS = [
     ("U1", "DRV8874PWPR", None, DRV, (CX, CY, 90), "C1855818"),
-    ("C1", "10uF 50V", C1206, {1: "GND", 2: "VM"}, (6.1, 3.0, 0), "C13585"),
-    ("C2", "10uF 50V", C1206, {1: "VM", 2: "GND"}, (10.7, 3.0, 0), "C13585"),
+    ("C1", "10uF 25V", C0805, {1: "GND", 2: "VM"}, (6.8, 3.0, 0), "C15850"),
+    ("C2", "10uF 25V", C0805, {1: "VM", 2: "GND"}, (10.25, 3.0, 0), "C15850"),
     ("C3", "100nF 50V", C0603, {1: "VM", 2: "GND"}, (9.8, 4.9, 0), "C14663"),
-    ("C5", "22nF 50V", C0603, {1: "CPL", 2: "CPH"}, (5.6, 5.75, 90), "C77571"),
+    ("C4", "100nF 50V", C0603, {1: "GND", 2: "VM"}, (3.4, 3.0, 90), "C14663"),
+    ("C5", "22nF 50V", C0402, {1: "CPL", 2: "CPH"}, (5.6, 5.75, 90), "C1532"),
     ("C6", "100nF 50V", C0603, {1: "VCP", 2: "VM"}, (7.15, 5.7, 90), "C14663"),
     ("R2", "10k", R0603, {1: "SLEEP", 2: "VREF"}, (3.5, 15.3, 90), "C25804"),
-    ("R3", "2.49k 1%", R0603, {1: "GND", 2: "CS"}, (8.0, 16.6, 0), "C22908"),
+    ("R3", "2.4k 1%", R0603, {1: "GND", 2: "CS"}, (8.0, 16.6, 0), "C22940"),
     ("R4", "20k", R0603, {1: "IMODE", 2: "GND"}, (11.6, 15.7, 0), "C4184"),
 ]
 
@@ -86,10 +88,11 @@ POWER_COPPER = {
              (F, 1.2, [(O1X + 0.8, 14.2), (12.3, 14.2), (12.3, 7.9), (13.97, 6.35)])],
     "GND": [(F, 0.4, [(top_x(9), TY), (top_x(9), 9.9)]),            # pins 9 and 15 into the thermal land
             (F, 0.4, [(top_x(15), TY), (top_x(15), 9.9)]),
-            (F, 0.4, [(12.425, 15.7), (12.425, 16.85)])],            # R4's GND pad to a via
+            (F, 0.4, [(12.425, 15.7), (12.425, 16.85)]),             # R4's GND pad to a via
+            (F, 0.4, [(7.175, 16.6), (6.4, 16.9)])],                  # R3's GND pad to a via
 }
 POWER_VIAS = {"OUT2": [(O2X + 0.655, 6.8), (O2X + 1.455, 6.8)],   # 0.8 / 0.4 mm
-              "GND": [(12.425, 16.85)]}
+              "GND": [(12.425, 16.85), (6.4, 16.9)]}
 
 # Freerouting classes: (width um, clearance um, via). Power nets leave
 # 0.65 mm-pitch pins, so they route at 0.3 mm and are widened afterwards.
@@ -225,6 +228,24 @@ def build():
         t.SetPosition(P(x, y))
         t.SetTextAngleDegrees(rot)
         board.Add(t)
+    # keep signals out from under the chip on B.Cu: that copper is the
+    # thermal pad's heat spreader (vias and the GND pour are still allowed)
+    ka = pcbnew.ZONE(board)
+    ka.SetIsRuleArea(True)
+    ka.SetDoNotAllowTracks(True)
+    ka.SetDoNotAllowVias(False)
+    ka.SetDoNotAllowPads(False)
+    ka.SetDoNotAllowCopperPour(False)
+    ka.SetDoNotAllowFootprints(False)
+    ka.SetLayer(pcbnew.B_Cu)
+    ka.SetZoneName("no tracks under U1")
+    o = ka.Outline()
+    o.NewOutline()
+    for x, y in ((CX - 2.6, CY - 2.0), (CX + 2.6, CY - 2.0), (CX + 2.6, CY + 2.0), (CX - 2.6, CY + 2.0)):
+        p = P(x, y)
+        o.Append(p.x, p.y)
+    board.Add(ka)
+
     # hand-routed power copper, locked so the autorouter keeps it
     for name, runs in POWER_COPPER.items():
         for layer, w, pts in runs:
@@ -333,7 +354,7 @@ def widen(board):
     x0, y0, x1, y1 = MM(ORIGIN[0] + EDGE_KEEP), MM(ORIGIN[1] + EDGE_KEEP), MM(ORIGIN[0] + W - EDGE_KEEP), MM(ORIGIN[1] + H - EDGE_KEEP)
     n = 0
     for t in tracks:
-        if t.GetClass() != "PCB_TRACK" or t.GetNetname() not in POWER:
+        if t.GetClass() != "PCB_TRACK" or t.GetNetname() not in POWER or t.GetNetname() == "GND":   # GND is poured
             continue
         layer = t.GetLayer()
         old = t.GetWidth()
@@ -444,7 +465,8 @@ def pololu_style(src, dst):
         for pad in fp.Pads():
             if pad.GetNetname() != "GND":
                 pad.SetZoneConnection(pcbnew.ZONE_CONNECTION_INHERITED)
-    for dx in (-1.0, 0.0, 1.0):          # 3x3 vias in the pad, between the footprint's six
+    others = [t for t in board.GetTracks() if t.GetNetCode() != gnd.GetNetCode()]
+    for dx in (-1.0, 0.0, 1.0):          # up to 3x3 vias in the pad, between the footprint's six
         for dy in (-1.1, 0.0, 1.1):
             v = pcbnew.PCB_VIA(board)
             v.SetPosition(P(CX + dx, CY + dy))
@@ -453,6 +475,10 @@ def pololu_style(src, dst):
             v.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
             v.SetNet(gnd)
             v.SetLocked(True)
+            # skip spots where a signal runs under the chip on B.Cu
+            if any(v.GetEffectiveShape(l).Collide(t.GetEffectiveShape(l), MM(0.2))
+                   for t in others for l in (pcbnew.F_Cu, pcbnew.B_Cu) if t.IsOnLayer(l)):
+                continue
             board.Add(v)
     for name in ("VM", "OUT1", "OUT2"):
         net = board.FindNet(name)
