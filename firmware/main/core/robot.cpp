@@ -150,7 +150,7 @@ void Robot::readInputs(float dt) {
         oc_ms_[m] += dt * 1000.f;
       else
         oc_ms_[m] = 0;
-      // The DRV8876 chops at ~1.33 A, so a stall sits just above the trip.
+      // The driver chops just above the trip, so a stall sits there.
       // Wait long enough for the stall and following-error checks to name
       // the problem first; this catches sustained overload while moving.
       if (oc_ms_[m] > 500.f) {

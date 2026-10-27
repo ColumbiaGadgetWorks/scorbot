@@ -1,0 +1,12 @@
+menu "Scorbot"
+
+    config SCORBOT_DRV8876
+        bool "DRV8876 motor drivers (Pololu #4036)"
+        default n
+        help
+            Off: DRV8874 carriers (Pololu #4035 or the hardware/drv8874-carrier
+            clone), CS 1.12 V/A, about 2.9 A limit, 2.5 A software trip.
+            On: DRV8876 carriers (Pololu #4036), CS 2.49 V/A, about 1.33 A
+            limit, 1.2 A software trip.
+
+endmenu

@@ -192,16 +192,17 @@ static void TestEStopAndFaults() {
 }
 
 static void TestOverCurrent() {
-  std::puts("safety: sustained current near the DRV8876 limit trips, brief peaks don't");
+  std::printf("safety: sustained current near the %s limit trips, brief peaks don't\n", kDriverName);
+  const float high = kDefaultTripA + 0.1f;
   Rig r;
   r.run(0.05f);
   r.robot.enable();
-  r.sim.extra_amps[kElbow] = 1.3f;
+  r.sim.extra_amps[kElbow] = high;
   r.run(0.3f);
   CHECK(r.robot.status().mode != Mode::kFault, "tripped early: '%s'", r.robot.status().fault);
   r.sim.extra_amps[kElbow] = 0;
   r.run(0.3f);
-  r.sim.extra_amps[kElbow] = 1.3f;
+  r.sim.extra_amps[kElbow] = high;
   r.run(0.6f);
   CHECK(std::strstr(r.robot.status().fault, "over-current on motor 3") != nullptr, "fault '%s'", r.robot.status().fault);
 }

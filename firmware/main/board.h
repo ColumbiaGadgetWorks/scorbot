@@ -2,6 +2,7 @@
 // Works on an ESP32-DevKitC with either a WROOM-32D or a WROOM-32E module.
 #pragma once
 #include "driver/gpio.h"
+#include "core/config.h"
 
 namespace board {
 
@@ -10,7 +11,7 @@ namespace board {
 constexpr gpio_num_t kEncA[6] = {GPIO_NUM_36, GPIO_NUM_34, GPIO_NUM_32, GPIO_NUM_25, GPIO_NUM_27, GPIO_NUM_4};
 constexpr gpio_num_t kEncB[6] = {GPIO_NUM_39, GPIO_NUM_35, GPIO_NUM_33, GPIO_NUM_26, GPIO_NUM_13, GPIO_NUM_23};
 
-// DRV8876 EN (PWM) per motor. 14/15 glitch at boot; harmless while nSLEEP is low.
+// Driver EN (PWM) per motor. 14/15 glitch at boot; harmless while nSLEEP is low.
 constexpr gpio_num_t kPwm[6] = {GPIO_NUM_16, GPIO_NUM_17, GPIO_NUM_18, GPIO_NUM_19, GPIO_NUM_14, GPIO_NUM_15};
 
 constexpr gpio_num_t kNSleep = GPIO_NUM_12;  // all drivers; 10k pull-down keeps them off at boot
@@ -27,7 +28,7 @@ constexpr int kSwitchBit0 = 0;  // P10-P14: home switches 1-5, pressed = low
 constexpr int kFaultBit = 5;    // P15: nFAULT (wired-OR), low = fault
 constexpr int kVmBit = 6;       // P16: VM present (22k/10k divider), high = motor power on
 
-constexpr float kCsVoltsPerAmp = 2.49f;  // DRV8876 1000 uA/A x 2.49k on the Pololu #4036 carrier
+constexpr float kCsVoltsPerAmp = scorbot::kCsVoltsPerAmp;  // set by the driver choice in core/config.h
 constexpr float kVmDivider = 5.7f;       // 47k / 10k
 
 }  // namespace board
