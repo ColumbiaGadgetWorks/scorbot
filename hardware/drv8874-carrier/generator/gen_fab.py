@@ -178,6 +178,14 @@ def main():
         for board, sub in ((pcb, "single"), (panel, "panel")):
             parts, lines, placed = fab(board, os.path.join(FAB, version, sub))
             print(f"{version}/{sub}: {parts} parts in {lines} BOM lines, {placed} placements")
+    # the three files to upload to JLC for the 6-up panel of version B, in one place
+    src, dst = os.path.join(FAB, "b", "panel"), os.path.join(FAB, "JLC_upload_6up_version_b")
+    if os.path.isdir(src):
+        shutil.rmtree(dst, ignore_errors=True)
+        os.makedirs(dst)
+        for a, b in (("drv8874_carrier_b_panel_gerbers.zip", "1_GERBERS_drv8874_6up.zip"),
+                     ("jlc_bom.csv", "2_BOM_drv8874_6up.csv"), ("jlc_cpl.csv", "3_CPL_drv8874_6up.csv")):
+            shutil.copy(os.path.join(src, a), os.path.join(dst, b))
 
 
 if __name__ == "__main__":
