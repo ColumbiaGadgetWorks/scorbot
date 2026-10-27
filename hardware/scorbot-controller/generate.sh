@@ -11,6 +11,7 @@ if [ -n "${FREEROUTING_JAR:-}" ]; then
 else
   echo "FREEROUTING_JAR not set: board left unrouted"
 fi
+python3 gen_silk.py      # connector/pin labels and the front logo (no copper changes)
 python3 gen_bom.py
 python3 gen_fab.py
 tmp=$(mktemp -d)

@@ -21,7 +21,6 @@ NS = uuid.UUID("5c0b0a7e-4e5d-4c6a-9f00-5c0b0a7e4e5d")  # same namespace as gen_
 OX, OY = 30.0, 30.0  # board origin on the page (mm)
 W, H = D.BOARD_W, D.BOARD_H
 MM = pcbnew.FromMM
-LOGO_FRONT = (52.0, 92.0)   # board mm, centre of the CGW logo (F.SilkS)
 LOGO_BACK = (112.0, 88.0)   # board mm, centre of the Stealie (B.SilkS, mirrored)
 
 
@@ -185,10 +184,9 @@ def build():
         t.SetTextThickness(MM(size * 0.15))
         board.Add(t)
 
-    # Logos: Columbia Gadget Works on the front, a Stealie on the back.
+    # Stealie on the back. The front CGW logo and the connector labels are added
+    # by gen_silk.py after routing.
     art = os.path.join(PROJ, "art")
-    silk_art.add_logo(board, os.path.join(art, "columbia_gadget_works_logo.png"), pcbnew.F_SilkS,
-                      LOGO_FRONT, 14.0, origin_mm=(OX, OY), mode="colored")
     silk_art.add_logo(board, os.path.join(art, "stealie.png"), pcbnew.B_SilkS,
                       LOGO_BACK, 34.0, origin_mm=(OX, OY), mode="colored", mirror=True)
 

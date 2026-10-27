@@ -87,13 +87,32 @@ Fit by hand, one of each pair:
 - **F1 (blade fuse holder) or J7 (screw terminal + inline fuse)**.
 - **J1 (barrel jack) or J2 (screw terminal)** for the 12 V input.
 
-## Silkscreen art
+## Silkscreen
 
-`art/columbia_gadget_works_logo.png` (front) and `art/stealie.png` (back)
-are turned into filled silkscreen by `generator/silk_art.py` when the board
-is generated. Positions and heights are `LOGO_FRONT` / `LOGO_BACK` in
-`gen_pcb.py`. Silkscreen is one colour: every non-white area of the image
-prints.
+`generator/gen_silk.py` runs after routing and adds front labels without
+touching copper:
+
+- **Power:** 12V IN (barrel, centre +, 18 V max), 12V IN 2 (+/-), both fuse
+  options (5 A blade F1, inline-fuse terminal J7: fit one), E-STOP (NC), and
+  "TVS: fit D1 OR D8".
+- **Buck module:** "12V -> 5V BUCK, set to 5.0 V before fitting the ESP32",
+  and each pin: IN+ 12V, IN- GND, OUT- GND, OUT+ 5V.
+- **Headers:** I2C (3V3 GND SDA SCL) and GPIO from the TCA9555 (P06 P07 P17
+  GND), each pin named.
+- **ESP32 DevKit:** USB-end arrow; 5V, 3V3 and GND turned and moved inward,
+  off the board edge and clear of the pins.
+- **Driver sockets:** M1-M6 with their joints (BASE, SHOULDER, ELBOW,
+  WRIST A, WRIST B, GRIPPER) inside each outline.
+- **Status LEDs:** VM, 5V, STATUS, 3V3.
+- **DB-50:** ROBOT CABLE / DD-50.
+- **CGW logo:** 23 mm tall, bottom middle.
+
+Edit `LABELS`, `LOGO` and `LOGO_H` in `gen_silk.py` to change them.
+
+Logo art: `art/columbia_gadget_works_logo.png` (front, placed by
+`gen_silk.py`) and `art/stealie.png` (back, `LOGO_BACK` in `gen_pcb.py`)
+become filled silkscreen through `generator/silk_art.py`. Silkscreen is one
+colour: every non-white area of the image prints.
 
 ## Ordering at JLCPCB
 
