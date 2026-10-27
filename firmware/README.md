@@ -37,9 +37,8 @@ The web UI is one file, `web/index.html`, embedded in the firmware. It has four 
 
 ## Build and flash
 
-The easy way: download ScorbotFlasher for your computer from the
-`firmware-latest` release on GitHub, run it, and follow the steps in the
-browser (see `flasher/README.md`).
+The easy way: open https://columbiagadgetworks.github.io/scorbot/ in Chrome
+or Edge, plug in the DevKit, and follow the steps (see `flasher/README.md`).
 
 To build and flash it yourself, you need ESP-IDF 5.3 or newer.
 

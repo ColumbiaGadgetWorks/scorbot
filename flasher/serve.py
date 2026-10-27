@@ -1,8 +1,7 @@
-"""Run the Scorbot firmware installer on this computer.
+"""Run the Scorbot firmware installer on this computer, offline.
 
-The packaged app (ScorbotFlasher.exe on Windows, ScorbotFlasher on Linux and
-macOS) is this script with the page and the latest firmware built in: just
-double-click it. From a checkout of the repository:
+Normally you don't need this: the same installer, with the latest firmware,
+is at https://columbiagadgetworks.github.io/scorbot/ . From a checkout:
 
     python3 flasher/serve.py              # serve, opening http://localhost:8484 in your browser
     python3 flasher/serve.py --download   # fetch the latest firmware build from GitHub first
@@ -23,38 +22,21 @@ import socket
 import subprocess
 import sys
 import tempfile
-import urllib.parse
 import urllib.request
 import webbrowser
 import zipfile
 
-FROZEN = getattr(sys, "frozen", False)          # running as the PyInstaller app
 HERE = os.path.dirname(os.path.abspath(__file__))
-STATIC = getattr(sys, "_MEIPASS", HERE)          # index.html and vendor/ (and bundled firmware)
 REPO = "ColumbiaGadgetWorks/scorbot"
 TAG = "firmware-latest"
 ASSET = "scorbot-firmware.zip"
 
 
-def cache_dir():
-    if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
-    else:
-        base = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
-    return os.path.join(base, "ScorbotFlasher")
-
-
-# Where downloaded or unpacked firmware goes: next to the script in a checkout,
-# or a per-user folder for the app (its own folder is read-only and temporary).
-FW_WRITABLE = os.path.join(cache_dir() if FROZEN else HERE, "firmware")
+FW_WRITABLE = os.path.join(HERE, "firmware")
 
 
 def firmware_dir():
-    """Downloaded firmware wins over the copy built into the app."""
-    for d in (FW_WRITABLE, os.path.join(STATIC, "firmware")):
-        if os.path.exists(os.path.join(d, "index.json")):
-            return d
-    return None
+    return FW_WRITABLE if os.path.exists(os.path.join(FW_WRITABLE, "index.json")) else None
 
 
 def unpack(data):
@@ -106,16 +88,10 @@ def download():
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
-    """Serves the page from STATIC and /firmware/ from firmware_dir()."""
+    """Serves flasher/ (the page, vendor/ and firmware/)."""
 
-    def translate_path(self, path):
-        rel = urllib.parse.unquote(urllib.parse.urlsplit(path).path).lstrip("/")
-        root = STATIC
-        if rel == "firmware" or rel.startswith("firmware/"):
-            root = firmware_dir() or os.path.join(STATIC, "firmware")
-            rel = rel[len("firmware"):].lstrip("/")
-        full = os.path.normpath(os.path.join(root, *[p for p in rel.split("/") if p not in ("", ".", "..")]))
-        return full
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=HERE, **kwargs)
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")   # always serve the newest build
@@ -146,8 +122,6 @@ def main():
     a = ap.parse_args()
 
     if a.build:
-        if FROZEN:
-            sys.exit("--build needs the repository checkout: run python3 flasher/serve.py --build there.")
         subprocess.run([sys.executable, os.path.join(HERE, "build_firmware.py")], check=True)
     elif a.zip:
         unpack(open(a.zip, "rb").read())
@@ -174,12 +148,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except SystemExit:
-        raise
-    except Exception as e:  # noqa: BLE001
-        print("Error:", e)
-        if FROZEN:
-            input("Press Enter to close.")      # keep a double-clicked window readable
-        raise
+    main()

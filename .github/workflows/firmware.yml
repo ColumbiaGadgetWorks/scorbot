@@ -1,6 +1,6 @@
-# Builds the controller firmware for every motor-driver variant, packages the
-# installer app (Windows, Linux, macOS) with that firmware inside, and
-# publishes both as the "firmware-latest" release.
+# Builds the controller firmware for every motor-driver variant, publishes the
+# web installer with that firmware on GitHub Pages, and attaches the firmware
+# zip to the "firmware-latest" release.
 name: firmware
 
 on:
@@ -45,57 +45,54 @@ jobs:
           name: scorbot-firmware
           path: dist/scorbot-firmware.zip
 
-  app:
-    needs: build
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            asset: ScorbotFlasher-windows.exe
-          - os: ubuntu-22.04          # older glibc, so the binary runs on more distros
-            asset: ScorbotFlasher-linux.tar.gz
-          - os: macos-latest
-            asset: ScorbotFlasher-macos.zip
-    runs-on: ${{ matrix.os }}
+  pages:
+    # The installer page plus the firmware just built, at
+    # https://columbiagadgetworks.github.io/scorbot/
+    if: github.ref == 'refs/heads/main'
+    needs: [host-tests, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
       - uses: actions/download-artifact@v4
         with:
           name: scorbot-firmware
-      - name: Package the installer
-        shell: bash
+      - name: Assemble the site
         run: |
-          python -m pip install pyinstaller==6.11.1
-          python -c "import zipfile; zipfile.ZipFile('scorbot-firmware.zip').extractall('flasher')"
-          python flasher/build_app.py
-          cd flasher/dist
-          case "${{ matrix.os }}" in
-            windows-*) mv ScorbotFlasher.exe "${{ matrix.asset }}" ;;
-            ubuntu-*)  tar czf "${{ matrix.asset }}" ScorbotFlasher ;;
-            macos-*)   zip -q "${{ matrix.asset }}" ScorbotFlasher ;;
-          esac
-      - uses: actions/upload-artifact@v4
+          mkdir site
+          cp flasher/index.html site/
+          cp -r flasher/vendor site/
+          python3 -c "import zipfile; zipfile.ZipFile('scorbot-firmware.zip').extractall('site')"
+          touch site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
-          name: app-${{ matrix.os }}
-          path: flasher/dist/${{ matrix.asset }}
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
 
   release:
     if: github.ref == 'refs/heads/main'
-    needs: [host-tests, build, app]
+    needs: [host-tests, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: assets
-          merge-multiple: true
+          name: scorbot-firmware
       - name: Replace the firmware-latest release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete firmware-latest -R "$GITHUB_REPOSITORY" -y --cleanup-tag || true
-          gh release create firmware-latest assets/* -R "$GITHUB_REPOSITORY" \
+          gh release create firmware-latest scorbot-firmware.zip -R "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --prerelease --title "Latest firmware (main)" \
-            --notes "Built from ${GITHUB_SHA} on $(date -u '+%Y-%m-%d %H:%M UTC'). Download ScorbotFlasher for your computer (Windows .exe, Linux, macOS), run it, and follow the steps in the browser. scorbot-firmware.zip is the bare firmware."
+            --notes "Built from ${GITHUB_SHA} on $(date -u '+%Y-%m-%d %H:%M UTC'). Install it from https://columbiagadgetworks.github.io/scorbot/ in Chrome or Edge."
