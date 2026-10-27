@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+firmware/build/
+firmware/build_flasher/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/dependencies.lock
+firmware/managed_components/
+firmware/test/test_core
+flasher/firmware/
