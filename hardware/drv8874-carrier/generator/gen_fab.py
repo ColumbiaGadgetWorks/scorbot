@@ -186,6 +186,14 @@ def main():
         for a, b in (("drv8874_carrier_b_panel_gerbers.zip", "1_GERBERS_drv8874_6up.zip"),
                      ("jlc_bom.csv", "2_BOM_drv8874_6up.csv"), ("jlc_cpl.csv", "3_CPL_drv8874_6up.csv")):
             shutil.copy(os.path.join(src, a), os.path.join(dst, b))
+    # and the same for a single board (to compare a 10-board order)
+    src, dst = os.path.join(FAB, "b", "single"), os.path.join(FAB, "JLC_upload_single_version_b")
+    if os.path.isdir(src):
+        shutil.rmtree(dst, ignore_errors=True)
+        os.makedirs(dst)
+        for a, b in (("drv8874_carrier_b_gerbers.zip", "1_GERBERS_drv8874_single.zip"),
+                     ("jlc_bom.csv", "2_BOM_drv8874_single.csv"), ("jlc_cpl.csv", "3_CPL_drv8874_single.csv")):
+            shutil.copy(os.path.join(src, a), os.path.join(dst, b))
 
 
 if __name__ == "__main__":

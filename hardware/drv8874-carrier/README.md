@@ -87,7 +87,7 @@ The back has the pin names, like Pololu's.
 ## Ordering at JLCPCB
 
 All three files are also in `fab/JLC_upload_6up_version_b/`, numbered in
-upload order. Use these, not the `fab/b/rfq/` files: the RFQ BOM lists
+upload order (`fab/JLC_upload_single_version_b/` has the single-board set). Use these, not the `fab/b/rfq/` files: the RFQ BOM lists
 per-board designators and its CPL is not in JLC's column format.
 
 1. Upload `fab/b/panel/drv8874_carrier_b_panel_gerbers.zip`.
