@@ -10,7 +10,7 @@ API.
 | --- | --- |
 | [`hardware/scorbot-controller/`](hardware/scorbot-controller/) | KiCad 7 project for the master board, generated from Python (`generator/design.py`), autorouted, with JLCPCB fab files in `fab/` |
 | [`firmware/`](firmware/) | ESP-IDF 5.3+ firmware, the single-file web UI, and host-side tests on a simulated arm |
-| [`flasher/`](flasher/) | Guided firmware installer: `python3 flasher/serve.py`, then flash from Chrome or Edge |
+| [`flasher/`](flasher/) | Guided firmware installer: download ScorbotFlasher (Windows, Linux, macOS) from the [firmware-latest release](https://github.com/ColumbiaGadgetWorks/scorbot/releases/tag/firmware-latest), run it, and flash from Chrome or Edge |
 
 The board takes an ESP32-DevKitC (WROOM-32D or -32E), six motor driver
 carriers and a DROK 5 V buck module on headers. The carriers are the DRV8874

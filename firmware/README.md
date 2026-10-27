@@ -37,9 +37,9 @@ The web UI is one file, `web/index.html`, embedded in the firmware. It has four 
 
 ## Build and flash
 
-The easy way: run `python3 flasher/serve.py` and follow the steps in the
-browser (see `flasher/README.md`). It installs the latest build from GitHub
-Actions.
+The easy way: download ScorbotFlasher for your computer from the
+`firmware-latest` release on GitHub, run it, and follow the steps in the
+browser (see `flasher/README.md`).
 
 To build and flash it yourself, you need ESP-IDF 5.3 or newer.
 

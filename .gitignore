@@ -8,3 +8,5 @@ firmware/dependencies.lock
 firmware/managed_components/
 firmware/test/test_core
 flasher/firmware/
+flasher/dist/
+flasher/build/

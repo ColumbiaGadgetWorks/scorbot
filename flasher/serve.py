@@ -1,46 +1,73 @@
 """Run the Scorbot firmware installer on this computer.
 
+The packaged app (ScorbotFlasher.exe on Windows, ScorbotFlasher on Linux and
+macOS) is this script with the page and the latest firmware built in: just
+double-click it. From a checkout of the repository:
+
     python3 flasher/serve.py              # serve, opening http://localhost:8484 in your browser
     python3 flasher/serve.py --download   # fetch the latest firmware build from GitHub first
     python3 flasher/serve.py --build      # build the firmware locally first (ESP-IDF or Docker)
+    python3 flasher/serve.py --zip FILE   # use a scorbot-firmware.zip you downloaded
 
-Needs only Python 3. Flashing happens in the browser over Web Serial, so use
-Chrome or Edge on a desktop. The page has to come from localhost (or HTTPS)
-for the browser to allow serial access, which is why it's served rather than
-opened as a file.
-
-Firmware comes from flasher/firmware/. If it's missing, this script tries the
-"firmware-latest" release that GitHub Actions publishes on every push to main.
+Flashing happens in the browser over Web Serial, so use Chrome or Edge on a
+desktop. The page has to come from localhost (or HTTPS) for the browser to
+allow serial access, which is why it's served rather than opened as a file.
 """
 import argparse
-import functools
 import http.server
 import io
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
+import tempfile
+import urllib.parse
 import urllib.request
 import webbrowser
 import zipfile
 
+FROZEN = getattr(sys, "frozen", False)          # running as the PyInstaller app
 HERE = os.path.dirname(os.path.abspath(__file__))
-FW = os.path.join(HERE, "firmware")
+STATIC = getattr(sys, "_MEIPASS", HERE)          # index.html and vendor/ (and bundled firmware)
 REPO = "ColumbiaGadgetWorks/scorbot"
 TAG = "firmware-latest"
 ASSET = "scorbot-firmware.zip"
 
 
-def have_firmware():
-    return os.path.exists(os.path.join(FW, "index.json"))
+def cache_dir():
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    else:
+        base = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
+    return os.path.join(base, "ScorbotFlasher")
+
+
+# Where downloaded or unpacked firmware goes: next to the script in a checkout,
+# or a per-user folder for the app (its own folder is read-only and temporary).
+FW_WRITABLE = os.path.join(cache_dir() if FROZEN else HERE, "firmware")
+
+
+def firmware_dir():
+    """Downloaded firmware wins over the copy built into the app."""
+    for d in (FW_WRITABLE, os.path.join(STATIC, "firmware")):
+        if os.path.exists(os.path.join(d, "index.json")):
+            return d
+    return None
 
 
 def unpack(data):
-    shutil.rmtree(FW, ignore_errors=True)
+    tmp = tempfile.mkdtemp()
     with zipfile.ZipFile(io.BytesIO(data)) as z:
-        z.extractall(HERE)          # the zip holds firmware/...
-    print("firmware unpacked to", FW)
+        z.extractall(tmp)                         # the zip holds firmware/...
+    shutil.rmtree(FW_WRITABLE, ignore_errors=True)
+    os.makedirs(os.path.dirname(FW_WRITABLE), exist_ok=True)
+    shutil.move(os.path.join(tmp, "firmware"), FW_WRITABLE)
+    shutil.rmtree(tmp, ignore_errors=True)
+    version = json.load(open(os.path.join(FW_WRITABLE, "index.json"))).get("version", "?")
+    print(f"firmware {version} unpacked to {FW_WRITABLE}")
+    return True
 
 
 def download():
@@ -67,19 +94,29 @@ def download():
         except Exception as e:  # noqa: BLE001
             print("  API download failed:", e)
     if shutil.which("gh"):
-        tmp = os.path.join(HERE, ".download")
-        shutil.rmtree(tmp, ignore_errors=True)
+        tmp = tempfile.mkdtemp()
         r = subprocess.run(["gh", "release", "download", TAG, "-R", REPO, "-p", ASSET, "-D", tmp])
         if r.returncode == 0:
             data = open(os.path.join(tmp, ASSET), "rb").read()
             shutil.rmtree(tmp, ignore_errors=True)
             return unpack(data)
-    print("Could not download the firmware. Either build it (--build), or download\n"
-          f"{ASSET} from the '{TAG}' release on GitHub and run: python3 flasher/serve.py --zip <file>")
-    return None
+    print(f"Could not download the firmware. Download {ASSET} from the '{TAG}' release\n"
+          f"on GitHub yourself and start this with:  --zip <that file>")
+    return False
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    """Serves the page from STATIC and /firmware/ from firmware_dir()."""
+
+    def translate_path(self, path):
+        rel = urllib.parse.unquote(urllib.parse.urlsplit(path).path).lstrip("/")
+        root = STATIC
+        if rel == "firmware" or rel.startswith("firmware/"):
+            root = firmware_dir() or os.path.join(STATIC, "firmware")
+            rel = rel[len("firmware"):].lstrip("/")
+        full = os.path.normpath(os.path.join(root, *[p for p in rel.split("/") if p not in ("", ".", "..")]))
+        return full
+
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")   # always serve the newest build
         super().end_headers()
@@ -88,27 +125,46 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
+def free_port(preferred):
+    for port in [preferred] + list(range(preferred + 1, preferred + 20)):
+        with socket.socket() as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8484)
-    ap.add_argument("--download", action="store_true", help="fetch the latest CI build first")
-    ap.add_argument("--build", action="store_true", help="build the firmware locally first")
+    ap.add_argument("--download", action="store_true", help="fetch the latest firmware build from GitHub")
+    ap.add_argument("--build", action="store_true", help="build the firmware locally first (from a checkout)")
     ap.add_argument("--zip", help="use a downloaded scorbot-firmware.zip")
     ap.add_argument("--no-browser", action="store_true")
     a = ap.parse_args()
 
     if a.build:
+        if FROZEN:
+            sys.exit("--build needs the repository checkout: run python3 flasher/serve.py --build there.")
         subprocess.run([sys.executable, os.path.join(HERE, "build_firmware.py")], check=True)
     elif a.zip:
         unpack(open(a.zip, "rb").read())
-    elif a.download or not have_firmware():
+    elif a.download or firmware_dir() is None:
         download()
-    if not have_firmware():
-        print("\nNo firmware yet: the page will open, but there's nothing to install.")
+    fw = firmware_dir()
+    if fw:
+        idx = json.load(open(os.path.join(fw, "index.json")))
+        print(f"Firmware {idx.get('version')} (built {idx.get('built')})")
+    else:
+        print("No firmware yet: the page will open, but there's nothing to install.")
 
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), functools.partial(Handler, directory=HERE))
-    url = f"http://localhost:{a.port}/"
-    print(f"\nScorbot firmware installer: {url}   (Ctrl+C to stop)")
+    port = free_port(a.port)
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    url = f"http://localhost:{server.server_address[1]}/"
+    print(f"\nScorbot firmware installer: {url}")
+    print("Leave this window open while you install. Close it (or press Ctrl+C) when you're done.")
     if not a.no_browser:
         webbrowser.open(url)
     try:
@@ -118,4 +174,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001
+        print("Error:", e)
+        if FROZEN:
+            input("Press Enter to close.")      # keep a double-clicked window readable
+        raise
