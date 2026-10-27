@@ -15,6 +15,7 @@ part; you solder the 0.1" pins.
 | `fab/b/panel/` | **Order this:** gerbers zip, `jlc_bom.csv`, `jlc_cpl.csv` for the version B panel |
 | `fab/a/panel/` | The same for version A |
 | `fab/<a or b>/single/` | One board, if you would rather let JLC panelize |
+| `fab/b/rfq/` | RFQ package for any assembler: `drv8874_carrier_b_rfq.zip` holds panel and single gerbers, a complete BOM with manufacturer part numbers, CPLs (mm from the lower-left corner) and `RFQ_NOTES.txt`. Made by `generator/gen_rfq.py` |
 | `docs/` | Renders: `version_a.png`, `version_b.png` (front, and back as seen from below), `panel_b.png` |
 
 ## Two versions

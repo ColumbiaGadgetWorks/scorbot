@@ -1,0 +1,9 @@
+Item,Designator (per board),Qty per board,Qty per panel (6 boards),Value,Description,Package,Manufacturer,Manufacturer P/N,LCSC P/N,Assembly
+1,"C1,C2",2,12,10uF 50V,MLCC 10 uF 50 V X5R 10% 1206,1206,Samsung Electro-Mechanics,CL31A106KBHNNNE,C13585,"SMT, top side"
+2,"C3,C6",2,12,100nF 50V,MLCC 100 nF 50 V X7R 10% 0603,0603,YAGEO,CC0603KRX7R9BB104,C14663,"SMT, top side"
+3,C5,1,6,22nF 50V,MLCC 22 nF 50 V X7R 10% 0603,0603,FH (Guangdong Fenghua),0603B223K500NT,C77571,"SMT, top side"
+4,R2,1,6,10k,Resistor 10 k 1% 0.1 W 0603,0603,UNI-ROYAL,0603WAF1002T5E,C25804,"SMT, top side"
+5,R3,1,6,2.49k 1%,Resistor 2.49 k 1% 0.1 W 0603,0603,UNI-ROYAL,0603WAF2491T5E,C22908,"SMT, top side"
+6,R4,1,6,20k,Resistor 20 k 1% 0.1 W 0603,0603,UNI-ROYAL,0603WAF2002T5E,C4184,"SMT, top side"
+7,U1,1,6,DRV8874PWPR,"Brushed DC motor driver, 37 V 6 A, HTSSOP-16 with thermal pad",HTSSOP-16 (TI PWP),Texas Instruments,DRV8874PWPR,C1855818,"SMT, top side"
+8,"J1,J2",2,12,1x7 male header 2.54 mm,"Pin header, 1 row x 7, 2.54 mm pitch, straight",THT,any,-,-,Do not fit (customer fits by hand)

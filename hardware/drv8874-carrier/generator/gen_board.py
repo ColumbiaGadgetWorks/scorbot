@@ -22,7 +22,7 @@ import pcbnew
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJ = os.path.normpath(os.path.join(HERE, ".."))
 PCB = os.path.join(PROJ, "drv8874_carrier.kicad_pcb")
-sys.path.insert(0, os.path.join(PROJ, "..", "scorbot-controller", "generator"))
+sys.path.append(os.path.join(PROJ, "..", "scorbot-controller", "generator"))
 from gen_route import _find, _sexp, prune_floating_vias, stitch  # noqa: E402  (shared with the master board)
 
 MM = pcbnew.FromMM
