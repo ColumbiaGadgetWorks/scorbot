@@ -6,6 +6,7 @@
 //   network  core 0: WiFi supervisor, captive DNS, HTTP + WebSocket (20 Hz state)
 #include "core/robot.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -41,8 +42,15 @@ void ControlTask(void*) {
     xSemaphoreTake(g_lock, portMAX_DELAY);
     g_robot->update(dt);
     const scorbot::Mode mode = g_robot->status().mode;
-    xSemaphoreGive(g_lock);
+    static scorbot::Mode last_mode = mode;
     using scorbot::Mode;
+    if (mode != last_mode && (mode == Mode::kFault || mode == Mode::kEStop)) {
+      const auto& st = g_robot->status();
+      ESP_LOGW(TAG, "%s: %s (VM %.1f V, sense %s, nFAULT %s)", mode == Mode::kFault ? "FAULT" : "E-STOP", st.fault,
+               st.vm, st.vm_ok ? "ok" : "low", st.driver_fault ? "low" : "high");
+    }
+    last_mode = mode;
+    xSemaphoreGive(g_lock);
     g_hal.setLedPattern(mode == Mode::kFault || mode == Mode::kEStop ? 3
                         : mode == Mode::kDisabled                   ? 2
                                                                     : 1);
@@ -53,6 +61,7 @@ void IoTask(void*) { g_hal.ioLoop(); }
 }  // namespace
 
 extern "C" void app_main() {
+  ESP_LOGI(TAG, "reset reason %d (1 power-on, 3 software, 4 panic, 9 brownout)", static_cast<int>(esp_reset_reason()));
   esp_err_t err = nvs_flash_init();
   if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
     ESP_ERROR_CHECK(nvs_flash_erase());

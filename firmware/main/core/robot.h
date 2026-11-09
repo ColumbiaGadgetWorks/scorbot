@@ -166,6 +166,9 @@ class Robot {
   bool first_ = true;
   float seek_start_ = 0;  // joint counts where the current switch search began
   float oc_ms_[kMotors] = {};
+  float vm_low_ms_ = 0;       // how long motor power has read as missing
+  float nfault_ms_ = 0;       // how long nFAULT has been asserted
+  float since_enable_ms_ = 0; // time since the drivers were woken
   bool sw_prev_[kSwitches] = {};
 };
 

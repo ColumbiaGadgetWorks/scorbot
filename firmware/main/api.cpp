@@ -99,6 +99,7 @@ cJSON* State(const Robot& robot, const RobotConfig& cfg, const HwInfo& hw) {
   cJSON_AddStringToObject(h, "ssid", hw.ssid);
   cJSON_AddNumberToObject(h, "rssi", hw.rssi);
   cJSON_AddNumberToObject(h, "uptime", hw.uptime_s);
+  cJSON_AddStringToObject(h, "reset", hw.reset);
   return o;
 }
 

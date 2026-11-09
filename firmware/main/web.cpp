@@ -27,12 +27,28 @@ struct Locked {
 
 using JsonPtr = std::unique_ptr<cJSON, decltype(&cJSON_Delete)>;
 
+const char* ResetReason() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: return "power-on";
+    case ESP_RST_EXT: return "reset button";
+    case ESP_RST_SW: return "software (settings or update)";
+    case ESP_RST_PANIC: return "crash (panic)";
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT: return "watchdog";
+    case ESP_RST_DEEPSLEEP: return "deep sleep";
+    case ESP_RST_BROWNOUT: return "brownout (supply dipped)";
+    default: return "unknown";
+  }
+}
+
 HwInfo Hw() {
   HwInfo hw;
   hw.expander = g_app->hal->hasExpander();
   hw.adc[0] = g_app->hal->hasAdc(0);
   hw.adc[1] = g_app->hal->hasAdc(1);
   hw.uptime_s = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
+  hw.reset = ResetReason();
   net::Fill(hw);
   return hw;
 }

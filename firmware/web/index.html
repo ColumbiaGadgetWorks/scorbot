@@ -420,6 +420,8 @@ function renderTest(){
   item("Motor power (VM)", S.vm_ok, S.vm!=null?fmt(S.vm,1)+" V":"");
   item("Driver fault line", !S.drv_fault, S.drv_fault?"a driver reports a fault":"clear");
   item("Network", hw.ip?true:null, (hw.net||"")+" "+(hw.ip||"")+(hw.ssid?" ("+hw.ssid+")":""));
+  item("Last restart", hw.reset ? !/brownout|crash|watchdog/.test(hw.reset) : null,
+       (hw.reset||"")+(hw.uptime!=null ? ` · up ${Math.floor(hw.uptime/60)} min ${hw.uptime%60} s` : ""));
   const testing = S.mode==="test";
   const done = S.mtest.filter(t=>t.r!=="pending").length;
   $("#selfTestProg").style.width = (testing? (done/6*100):0)+"%";
@@ -749,7 +751,7 @@ class MockRobot {
       pos:this.pos.map(v=>+v.toFixed(2)),tgt:this.tgt.map(v=>+v.toFixed(2)),homed:this.homed.slice(),counts:c,duty:this.duty.slice(),cur:this.duty.map(d=>+(Math.abs(d)*0.6).toFixed(3)),
       sw:[0,1,2,3,4].map(i=>this.sw(i)),sw_on:this.swOn.slice(),sw_off:this.swOff.slice(),emin:this.emin.slice(),emax:this.emax.slice(),calibrated:this.cfg.joints.map(j=>j.cpu_calibrated),
       mtest:this.mtest.map(t=>Object.assign({},t)),cal:this.cal.map(x=>Object.assign({r:"pending",min:0,max:0,cpu:null,home:null,smin:null,smax:null,note:""},x)),
-      hw:{expander:true,adc0:true,adc1:true,net:"demo",ip:"",ssid:"",rssi:0,uptime:Math.round(this.t)}};
+      hw:{expander:true,adc0:true,adc1:true,net:"demo",ip:"",ssid:"",rssi:0,uptime:Math.round(this.t),reset:"power-on"}};
   }
   run(cb){ setInterval(()=>{ for(let i=0;i<5;i++) this.step(0.01); cb(this.state()); }, 50); }
 }

@@ -191,6 +191,37 @@ static void TestEStopAndFaults() {
   CHECK(std::strstr(r.robot.status().fault, "following") != nullptr, "fault '%s'", r.robot.status().fault);
 }
 
+static void TestFaultFiltering() {
+  std::puts("safety: brief VM / nFAULT glitches are ignored, sustained ones latch");
+  Rig r;
+  r.run(0.05f);
+  CHECK(r.robot.enable(), "%s", r.robot.lastError());
+  r.sim.fault = true;   // nFAULT right after wake (charge pump starting)
+  r.run(0.008f);
+  r.sim.fault = false;
+  r.run(0.05f);
+  CHECK(r.robot.status().mode != Mode::kFault, "wake glitch faulted: '%s'", r.robot.status().fault);
+  r.sim.vm = false;     // a 10 ms dip
+  r.run(0.010f);
+  r.sim.vm = true;
+  r.run(0.05f);
+  CHECK(r.robot.status().mode != Mode::kEStop, "10 ms VM dip latched E-stop");
+  r.sim.fault = true;   // a 3 ms nFAULT pulse
+  r.run(0.003f);
+  r.sim.fault = false;
+  r.run(0.05f);
+  CHECK(r.robot.status().mode != Mode::kFault, "3 ms nFAULT pulse faulted: '%s'", r.robot.status().fault);
+  r.sim.fault = true;   // a real driver fault
+  r.run(0.05f);
+  CHECK(std::strstr(r.robot.status().fault, "nFAULT") != nullptr, "sustained nFAULT: '%s'", r.robot.status().fault);
+  r.sim.fault = false;
+  CHECK(r.robot.resetFault(), "%s", r.robot.lastError());
+  CHECK(r.robot.enable(), "%s", r.robot.lastError());
+  r.sim.vm = false;     // a real E-stop
+  r.run(0.05f);
+  CHECK(r.robot.status().mode == Mode::kEStop, "sustained VM loss: mode %s", ModeName(r.robot.status().mode));
+}
+
 static void TestOverCurrent() {
   std::printf("safety: sustained current near the %s limit trips, brief peaks don't\n", kDriverName);
   const float high = kDefaultTripA + 0.1f;
@@ -232,6 +263,7 @@ int main() {
   TestMotorTestFindsReversedMotor();
   TestSelfTest();
   TestEStopAndFaults();
+  TestFaultFiltering();
   TestOverCurrent();
   TestDifferentialWrist();
   std::printf("\n%d checks passed, %d failed\n", g_pass, g_fail);

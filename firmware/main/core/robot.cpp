@@ -135,13 +135,20 @@ void Robot::readInputs(float dt) {
   st_.driver_fault = hal_.driverFault();
 
   if (st_.enabled) {
-    if (!st_.vm_ok) {
+    // Act on VM loss and nFAULT only once they persist: a single reading can
+    // be a glitch (motor switching noise), and the DRV887x can hold nFAULT low
+    // for a moment while its charge pump starts after waking.
+    const float ms = dt * 1000.f;
+    since_enable_ms_ += ms;
+    vm_low_ms_ = st_.vm_ok ? 0.f : vm_low_ms_ + ms;
+    nfault_ms_ = (st_.driver_fault && since_enable_ms_ > kDriverWakeMs) ? nfault_ms_ + ms : 0.f;
+    if (vm_low_ms_ > kVmLossMs) {
       disable();
       st_.mode = Mode::kEStop;
       std::snprintf(st_.fault, sizeof(st_.fault), "motor power lost (E-stop?)");
       return;
     }
-    if (st_.driver_fault) {
+    if (nfault_ms_ > kNFaultMs) {
       fault("driver fault (nFAULT)");
       return;
     }
@@ -298,6 +305,8 @@ bool Robot::enable() {
     return false;
   }
   holdHere();
+  vm_low_ms_ = nfault_ms_ = since_enable_ms_ = 0;
+  for (int m = 0; m < kMotors; ++m) oc_ms_[m] = 0;
   st_.enabled = true;
   hal_.enableDrivers(true);
   if (st_.mode == Mode::kDisabled) st_.mode = Mode::kIdle;

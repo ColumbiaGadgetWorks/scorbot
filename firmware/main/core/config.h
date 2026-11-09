@@ -33,6 +33,11 @@ constexpr float kDriverCurrentLimitA = 3.06f;
 constexpr float kDefaultTripA = 2.5f;
 #endif
 
+// Fault filtering (see Robot::update): how long a condition must last.
+constexpr float kVmLossMs = 20.f;      // motor power missing -> E-stop latch
+constexpr float kNFaultMs = 5.f;       // nFAULT asserted -> driver fault
+constexpr float kDriverWakeMs = 10.f;  // nFAULT ignored this long after enabling
+
 enum Joint : int { kBase = 0, kShoulder, kElbow, kPitch, kRoll, kGripper };
 
 struct MotorConfig {

@@ -11,6 +11,7 @@ struct HwInfo {
   char ssid[33] = "";
   int rssi = 0;
   uint32_t uptime_s = 0;
+  const char* reset = "";  // why the ESP32 last restarted, e.g. "brownout"
 };
 
 namespace api {
