@@ -140,6 +140,12 @@ bool Esp32Hal::adsStart(int chip, int ch) {
   return i2c_master_transmit(ads_[chip], buf, 3, 10) == ESP_OK;
 }
 
+// True once the single-shot conversion has finished (config register bit 15).
+bool Esp32Hal::adsReady(int chip) {
+  uint8_t reg = 0x01, rx[2];
+  return i2c_master_transmit_receive(ads_[chip], &reg, 1, rx, 2, 10) == ESP_OK && (rx[0] & 0x80);
+}
+
 bool Esp32Hal::adsRead(int chip, float* volts) {
   uint8_t reg = 0x00, rx[2];
   if (i2c_master_transmit_receive(ads_[chip], &reg, 1, rx, 2, 10) != ESP_OK) return false;
@@ -153,6 +159,7 @@ bool Esp32Hal::adsRead(int chip, float* volts) {
 void Esp32Hal::ioLoop() {
   int ch = 0;
   bool started = false;
+  int waits = 0;
   int led_t = 0;
   TickType_t last = xTaskGetTickCount();
   for (;;) {
@@ -163,16 +170,28 @@ void Esp32Hal::ioLoop() {
       uint8_t p1;
       if (tcaRead(0x01, &p1)) port1_ = p1;
     }
-    if (started) {
+    // Read only finished conversions. When WiFi (higher priority, same core)
+    // delays this task, vTaskDelayUntil runs late cycles back to back; reading
+    // early returned the previous channel's result, so e.g. a motor current
+    // (~0 V) showed up as VM.
+    const bool ready = started && (!ads_ok_[0] || adsReady(0)) && (!ads_ok_[1] || adsReady(1));
+    if (ready) {
       float v;
       if (ads_ok_[0] && adsRead(0, &v)) cur_[ch] = v / board::kCsVoltsPerAmp;
       if (ads_ok_[1] && adsRead(1, &v)) {
         if (ch < 2) cur_[4 + ch] = v / board::kCsVoltsPerAmp;
-        if (ch == 2) vm_ = v * board::kVmDivider;
+        if (ch == 2) {
+          const float vm = v * board::kVmDivider, prev = vm_.load();
+          vm_ = std::isnan(prev) ? vm : prev + 0.3f * (vm - prev);  // light smoothing (~30 ms)
+        }
       }
       ch = (ch + 1) % 4;
     }
-    started = (ads_ok_[0] && adsStart(0, ch)) | (ads_ok_[1] && adsStart(1, ch));
+    waits = ready ? 0 : waits + 1;
+    if (ready || !started || waits > 5) {   // (re)start; give up waiting after ~10 ms
+      started = (ads_ok_[0] && adsStart(0, ch)) | (ads_ok_[1] && adsStart(1, ch));
+      waits = 0;
+    }
 
     // Status LED: 0 off, 1 on, 2 slow blink, 3 fast blink.
     led_t = (led_t + 1) % 500;

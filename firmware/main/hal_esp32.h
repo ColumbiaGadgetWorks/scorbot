@@ -35,6 +35,7 @@ class Esp32Hal : public scorbot::Hal {
   bool tcaWrite(uint8_t reg, uint8_t val);
   bool tcaRead(uint8_t reg, uint8_t* val);
   bool adsStart(int chip, int ch);
+  bool adsReady(int chip);
   bool adsRead(int chip, float* volts);
 
   pcnt_unit_handle_t pcnt_[6] = {};

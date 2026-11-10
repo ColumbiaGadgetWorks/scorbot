@@ -130,7 +130,11 @@ void Robot::readInputs(float dt) {
     if (on) st_.sw_seen_on[s] = true;
     if (!on) st_.sw_seen_off[s] = true;
   }
-  st_.vm_ok = hal_.motorPowerOk();
+  // VM present/absent, filtered: a reading must persist kVmLossMs before it
+  // counts (here for the UI, and below for the E-stop latch).
+  const float ms_now = dt * 1000.f;
+  vm_low_ms_ = hal_.motorPowerOk() ? 0.f : vm_low_ms_ + ms_now;
+  st_.vm_ok = vm_low_ms_ <= kVmLossMs;
   st_.vm = hal_.motorVolts();
   st_.driver_fault = hal_.driverFault();
 
@@ -140,7 +144,6 @@ void Robot::readInputs(float dt) {
     // for a moment while its charge pump starts after waking.
     const float ms = dt * 1000.f;
     since_enable_ms_ += ms;
-    vm_low_ms_ = st_.vm_ok ? 0.f : vm_low_ms_ + ms;
     nfault_ms_ = (st_.driver_fault && since_enable_ms_ > kDriverWakeMs) ? nfault_ms_ + ms : 0.f;
     if (vm_low_ms_ > kVmLossMs) {
       disable();
