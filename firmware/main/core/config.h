@@ -18,16 +18,19 @@ constexpr int kSwitches = 5; // home microswitches on joints 0..4 (gripper has n
 // ("Scorbot"), or with -DSCORBOT_POLOLU_4035 / -DSCORBOT_DRV8876 on the host.
 #if defined(SCORBOT_DRV8876) || defined(CONFIG_SCORBOT_DRIVER_POLOLU_4036)
 constexpr const char* kDriverName = "DRV8876 (Pololu #4036)";
+constexpr const char* kVariantId = "pololu4036";  // firmware build for OTA updates
 constexpr float kCsVoltsPerAmp = 2.49f;        // 1000 uA/A x 2.49k
 constexpr float kDriverCurrentLimitA = 1.33f;  // carrier rated 1.3 A continuous
 constexpr float kDefaultTripA = 1.2f;
 #elif defined(SCORBOT_POLOLU_4035) || defined(CONFIG_SCORBOT_DRIVER_POLOLU_4035)
 constexpr const char* kDriverName = "DRV8874 (Pololu #4035)";
+constexpr const char* kVariantId = "pololu4035";
 constexpr float kCsVoltsPerAmp = 1.12f;        // 450 uA/A x 2.49k
 constexpr float kDriverCurrentLimitA = 2.94f;  // carrier rated 2.1 A continuous
 constexpr float kDefaultTripA = 2.5f;
 #else  // hardware/drv8874-carrier (the default)
 constexpr const char* kDriverName = "DRV8874 (CGW carrier)";
+constexpr const char* kVariantId = "cgw";
 constexpr float kCsVoltsPerAmp = 1.08f;        // 450 uA/A x 2.4k (a JLC Basic value)
 constexpr float kDriverCurrentLimitA = 3.06f;
 constexpr float kDefaultTripA = 2.5f;

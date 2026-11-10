@@ -159,6 +159,14 @@ can crack if the board flexes.
 - **Web UI tabs:** Control (3D view, jog), Test (self-test, switch lamps, motor test with Flip, encoders),
   Calibrate (measure travel, homing), Settings.
 - **Tests:** `make -C firmware/test run`. 58 checks, run under all 3 driver settings. CI runs them too.
+- **Updates over WiFi:** Settings → Firmware checks and installs the latest build for this driver
+  type from the Pages site, or takes an uploaded `.bin`. There are two 1.9 MB app slots (`partitions.csv`),
+  with rollback if a new image doesn't run for 20 s, and NVS stays at 0x9000. Moving from the old
+  single-slot layout needs one USB install without erase. The version is baked in through
+  `SCORBOT_VERSION`, set by `build_firmware.py`.
+- **Fault filtering:** VM loss must last 20 ms before E-stop latches. nFAULT must last 5 ms, and is
+  ignored for 10 ms after enable. Faults are logged to serial. The Test tab shows the last restart
+  reason.
 - **Builds:** compiled cleanly for ESP32 (about 0.97 MB, 39% of the app partition free). **Never run on real
   hardware yet.**
 

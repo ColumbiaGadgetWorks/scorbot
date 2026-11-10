@@ -54,6 +54,33 @@ On first boot there are no WiFi settings, so join `Scorbot-XXXX` and set WiFi un
 3. Run **Calibrate → Measure travel** per joint and **Apply**.
 4. Run **Home all**.
 
+## Updating over WiFi
+
+**Settings → Firmware** shows the installed version, the driver build and
+the active app slot. It offers:
+
+- **Check for update / Install update:** downloads this driver type's latest
+  build from the project's GitHub Pages site
+  (`https://columbiagadgetworks.github.io/scorbot/firmware/<variant>/scorbot_controller.bin`).
+  The controller must be on a WiFi network with internet; its own access
+  point isn't enough.
+- **Upload .bin file:** installs a `scorbot_controller.bin` from your
+  computer, with no internet needed. Use the one for your driver type from
+  `scorbot-firmware.zip` on the `firmware-latest` release.
+
+The motors are switched off during an update. The flash has two app slots:
+an update is written to the spare one and only switched to after it checks
+out. If the new firmware crashes before it has run for 20 s, the bootloader
+rolls back to the previous one. Settings (NVS) are kept.
+
+**One-time step:** firmware from before this feature used a single-slot flash
+layout. Install once over USB from the web installer, **without erase**: the
+installer writes the new layout, and WiFi updates work from then on. Your
+settings survive, because NVS stays where it was.
+
+API: `GET /api/ota` (status), `POST /api/ota/check`, `POST /api/ota/install`,
+`POST /api/ota/upload` (raw `.bin` body).
+
 ## HTTP / WebSocket API
 
 | Endpoint | |

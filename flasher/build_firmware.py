@@ -49,14 +49,15 @@ def git_version():
         return datetime.date.today().isoformat()
 
 
-def build_variant(vid, kconfig, out):
+def build_variant(vid, kconfig, out, version):
     bdir = os.path.join(FW, "build_flasher", vid)
     os.makedirs(bdir, exist_ok=True)
     extra = os.path.join(bdir, "variant.defaults")
     with open(extra, "w") as f:
         f.write(kconfig + "\n")
+    env = dict(os.environ, SCORBOT_VERSION=version)   # baked into the image for OTA checks
     subprocess.run(["idf.py", "-C", FW, "-B", bdir, f"-DSDKCONFIG={os.path.join(bdir, 'sdkconfig')}",
-                    f"-DSDKCONFIG_DEFAULTS={os.path.join(FW, 'sdkconfig.defaults')};{extra}", "build"], check=True)
+                    f"-DSDKCONFIG_DEFAULTS={os.path.join(FW, 'sdkconfig.defaults')};{extra}", "build"], check=True, env=env)
     args = json.load(open(os.path.join(bdir, "flasher_args.json")))
     parts = []
     for offset, path in sorted(args["flash_files"].items(), key=lambda kv: int(kv[0], 16)):
@@ -96,7 +97,7 @@ def main():
              "chip": "ESP32", "variants": []}
     for vid, name, desc, kconfig in VARIANTS:
         os.makedirs(os.path.join(out, vid))
-        parts = build_variant(vid, kconfig, out)
+        parts = build_variant(vid, kconfig, out, version)
         manifest = {
             "name": f"Scorbot ER-4u controller - {name}",
             "version": version,

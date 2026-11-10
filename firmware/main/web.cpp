@@ -10,6 +10,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "net.h"
+#include "ota.h"
 
 static const char* TAG = "web";
 
@@ -189,6 +190,36 @@ esp_err_t PostReboot(httpd_req_t* req) {
   return ESP_OK;
 }
 
+// ---- firmware update ------------------------------------------------------
+void DisableRobot() {
+  Locked l;
+  g_app->robot->disable();
+}
+
+esp_err_t GetOta(httpd_req_t* req) { return SendJson(req, ota::Status()); }
+
+esp_err_t PostOtaCheck(httpd_req_t* req) {
+  if (!Authorized(req)) return SendError(req, "401 Unauthorized", "bad or missing X-API-Key");
+  ota::StartCheck();
+  return SendJson(req, ota::Status());
+}
+
+esp_err_t PostOtaInstall(httpd_req_t* req) {
+  if (!Authorized(req)) return SendError(req, "401 Unauthorized", "bad or missing X-API-Key");
+  DisableRobot();  // motors off for the whole update
+  ota::StartInstall();
+  return SendJson(req, ota::Status());
+}
+
+esp_err_t PostOtaUpload(httpd_req_t* req) {
+  if (!Authorized(req)) return SendError(req, "401 Unauthorized", "bad or missing X-API-Key");
+  if (req->content_len < 64 * 1024) return SendError(req, "400 Bad Request", "send the scorbot_controller.bin app image");
+  DisableRobot();
+  const char* error = "";
+  if (ota::ReceiveUpload(req, &error) != ESP_OK) return SendError(req, "400 Bad Request", error);
+  return SendJson(req, ota::Status());
+}
+
 // WebSocket: commands in, {"t":"reply",...} out; state is pushed by Broadcaster.
 esp_err_t Ws(httpd_req_t* req) {
   if (req->method == HTTP_GET) return ESP_OK;  // handshake
@@ -295,6 +326,10 @@ void Start(App* app) {
   Add("/api/wifi", HTTP_GET, GetWifi);
   Add("/api/wifi", HTTP_POST, PostWifi);
   Add("/api/reboot", HTTP_POST, PostReboot);
+  Add("/api/ota", HTTP_GET, GetOta);
+  Add("/api/ota/check", HTTP_POST, PostOtaCheck);
+  Add("/api/ota/install", HTTP_POST, PostOtaInstall);
+  Add("/api/ota/upload", HTTP_POST, PostOtaUpload);
   Add("/ws", HTTP_GET, Ws, true);
   httpd_register_err_handler(g_server, HTTPD_404_NOT_FOUND, NotFound);
   xTaskCreatePinnedToCore(Broadcaster, "ws_tx", 6144, nullptr, 4, nullptr, 0);

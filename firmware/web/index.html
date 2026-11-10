@@ -234,6 +234,15 @@ form.cfg label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:v
       <div class="row" style="margin-top:10px"><button id="cfgExport">Download backup</button><label class="row"><button id="cfgImportBtn">Restore from file</button><input type="file" id="cfgImport" accept="application/json" hidden></label></div>
       <div class="row" style="margin-top:10px"><button id="cfgDefaults">Factory defaults</button><button id="rebootBtn">Reboot controller</button></div>
     </div>
+    <div class="card">
+      <h3>Firmware</h3>
+      <p class="hint">Updates come from the project's GitHub build for this controller's driver type. The controller must be on a WiFi network with internet. The motors are switched off during an update; settings and calibration are kept.</p>
+      <p id="otaInfo" class="muted">…</p>
+      <div class="meter" id="otaBar" style="display:none;margin:8px 0"><i></i></div>
+      <p id="otaMsg"></p>
+      <div class="row"><button id="otaCheck">Check for update</button><button id="otaInstall" class="primary">Install update</button></div>
+      <div class="row" style="margin-top:10px"><label class="row"><button id="otaFileBtn">Upload .bin file</button><input type="file" id="otaFile" accept=".bin,application/octet-stream" hidden></label></div>
+    </div>
   </div>
 </section>
 </main>
@@ -522,6 +531,39 @@ function buildSettings(){
   $("#cfgImportBtn").onclick = ()=>$("#cfgImport").click();
   $("#cfgImport").onchange = async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); const r=await Conn.rest("/api/config", j); if(r.joints){ CFG=r; renderConfig(); toast("Restored"); } }catch(err){ toast("⚠ not a valid backup"); } };
   $("#cfgDefaults").onclick = ()=>{ if(confirm("Reset all calibration and tuning to factory defaults?")) cmd({cmd:"defaults"},"Defaults restored").then(loadConfig); };
+  // ---- firmware update ----
+  const showOta = (s)=>{
+    if(!s || !s.version) return;
+    $("#otaInfo").textContent = `Installed: ${s.version} · ${s.driver} · slot ${s.slot}` + (s.latest ? ` · latest: ${s.latest}` : "");
+    const busy = s.busy || s.state==="rebooting";
+    $("#otaMsg").textContent = !s.ota_layout ? "This controller still has the old flash layout: install once over USB from the web installer (without erase) to enable updates over WiFi."
+                             : (s.message || "");
+    $("#otaBar").style.display = s.progress>=0 ? "" : "none";
+    if(s.progress>=0) $("#otaBar").firstChild.style.width = s.progress+"%";
+    $("#otaCheck").disabled = $("#otaInstall").disabled = $("#otaFileBtn").disabled = busy || !s.ota_layout;
+    return busy;
+  };
+  const pollOta = async ()=>{
+    try { const s = await Conn.rest("/api/ota"); if(showOta(s)) setTimeout(pollOta, 800);
+          else if(s && s.state==="rebooting") toast("Updated: the controller is restarting"); }
+    catch(e){ $("#otaMsg").textContent = "Controller restarting…"; setTimeout(pollOta, 3000); }
+  };
+  $("#otaCheck").onclick = async ()=>{ showOta(await Conn.rest("/api/ota/check", {})); pollOta(); };
+  $("#otaInstall").onclick = async ()=>{
+    if(!confirm("Download and install the latest firmware? The motors switch off and the controller restarts.")) return;
+    showOta(await Conn.rest("/api/ota/install", {})); pollOta();
+  };
+  $("#otaFileBtn").onclick = ()=>$("#otaFile").click();
+  $("#otaFile").onchange = async (e)=>{
+    const f = e.target.files[0]; e.target.value = "";
+    if(!f || !confirm(`Install ${f.name}? The motors switch off and the controller restarts.`)) return;
+    if(demo){ toast("demo: no controller"); return; }
+    $("#otaMsg").textContent = "Uploading…"; setTimeout(pollOta, 500);
+    const r = await fetch("/api/ota/upload", {method:"POST", headers:{"Content-Type":"application/octet-stream","X-API-Key":Conn.key()}, body:f})
+                    .then(r=>r.json()).catch(()=>({ok:false,error:"connection lost"}));
+    if(r.ok===false) toast("⚠ "+(r.error||"upload failed"));
+  };
+  setTimeout(pollOta, 500);
   $("#rebootBtn").onclick = ()=>{ if(confirm("Reboot the controller?")) Conn.rest("/api/reboot",{}); };
   $("#wifiSave").onclick = async ()=>{ const fd=new FormData($("#wifiForm")); const body={}; for(const [k,v] of fd.entries()) if(v!=="") body[k]=v; if(!confirm("Save WiFi settings and reboot?")) return; const r=await Conn.rest("/api/wifi", body); toast(r.ok?"Saved: controller is rebooting":"⚠ "+(r.error||"failed")); };
   const mk=$("#myKey"); mk.value=Conn.key(); mk.onchange=()=>{ try{ localStorage.setItem("scorbot.key", mk.value); }catch(e){} toast("Key stored in this browser"); };
@@ -716,6 +758,7 @@ class MockRobot {
   rest(path, body){
     if(path==="/api/config"){ if(body) Object.assign(this.cfg, JSON.parse(JSON.stringify(body))); return Promise.resolve(JSON.parse(JSON.stringify(this.cfg))); }
     if(path==="/api/wifi") return Promise.resolve(body?{ok:true,note:"demo"}:{ssid:"",hostname:"scorbot"});
+    if(path.startsWith("/api/ota")) return Promise.resolve({version:"demo",driver:"DRV8874 (CGW carrier)",slot:"ota_0",ota_layout:true,busy:false,progress:-1,state:"idle",latest:"",message:"demo mode"});
     return Promise.resolve({ok:true});
   }
   step(dt){

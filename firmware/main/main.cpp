@@ -13,6 +13,7 @@
 #include "freertos/task.h"
 #include "hal_esp32.h"
 #include "net.h"
+#include "ota.h"
 #include "nvs_flash.h"
 #include "settings.h"
 #include "web.h"
@@ -85,5 +86,12 @@ extern "C" void app_main() {
   net::Start(g_net);
   g_app = App{g_robot, &g_cfg, &g_net, &g_hal, g_lock};
   web::Start(&g_app);
+  // Keep a freshly updated firmware only once it has run for 20 s; if it
+  // crashes or hangs before then, the bootloader rolls back to the previous one.
+  xTaskCreate([](void*) {
+    vTaskDelay(pdMS_TO_TICKS(20000));
+    ota::MarkGood();
+    vTaskDelete(nullptr);
+  }, "ota_ok", 3072, nullptr, 1, nullptr);
   ESP_LOGI(TAG, "ready: http://%s.local or the IP shown on the serial log", g_net.hostname.c_str());
 }
