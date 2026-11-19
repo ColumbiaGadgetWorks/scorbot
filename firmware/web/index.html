@@ -470,7 +470,7 @@ function buildCalib(){
   $("#rollStart").onclick = ()=>{ rollStartCounts = S.counts.slice(); $("#rollDone").disabled=false; $("#rollInfo").textContent="Now jog roll one full turn…"; };
   $("#rollDone").onclick = ()=>{
     if(!rollStartCounts) return;
-    const roll0 = 0.5*(rollStartCounts[3]-rollStartCounts[4]), roll1 = 0.5*(S.counts[3]-S.counts[4]);
+    const roll0 = 0.5*(rollStartCounts[3]+rollStartCounts[4]), roll1 = 0.5*(S.counts[3]+S.counts[4]);  // roll = both wrist motors the same way
     const cpu = Math.abs(roll1-roll0)/360;
     if (cpu<1){ toast("Roll barely moved: jog it a full turn first"); return; }
     cmd({cmd:"set_cpu",joint:4,value:cpu},`Roll set to ${fmt(cpu,2)} counts/°`).then(loadConfig);
@@ -726,7 +726,7 @@ class MockRobot {
     this.swOn=[0,0,0,0,0].map(()=>false); this.swOff=this.swOn.slice(); this.counts0=[3000,-1200,800,400,-300,1500];
     this.emin=null; this.emax=null; this.duty=[0,0,0,0,0,0]; this.t=0; this.switchAt=[12,40,-20,5,33];
   }
-  counts(){ const c=this.cfg.joints.map(j=>j.counts_per_unit); const jc=this.pos.map((p,i)=>p*c[i]); return [jc[0],jc[1],jc[2],jc[3]+jc[4],jc[3]-jc[4],jc[5]].map((v,i)=>Math.round(v+this.counts0[i])); }
+  counts(){ const c=this.cfg.joints.map(j=>j.counts_per_unit); const jc=this.pos.map((p,i)=>p*c[i]); return [jc[0],jc[1],jc[2],jc[4]+jc[3],jc[4]-jc[3],jc[5]].map((v,i)=>Math.round(v+this.counts0[i])); }
   sw(i){ return Math.abs(this.pos[i]-this.switchAt[i])<1.2; }
   handle(m){
     const ok={ok:true}, no=e=>({ok:false,error:e});

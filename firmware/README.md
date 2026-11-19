@@ -15,7 +15,8 @@ The `control` task runs on core 1 at 1 kHz. It does the following:
   "Motor driver carriers" in `idf.py menuconfig` (Scorbot menu): #4035
   DRV8874 (1.12 V/A, about 2.9 A) or #4036 DRV8876 (2.49 V/A, 1.33 A limit,
   1.2 A trip).
-- Handles the wrist as a differential pair: pitch = (m4+m5)/2, roll = (m4-m5)/2.
+- Handles the wrist as a bevel-gear differential: pitch = (m4-m5)/2, roll = (m4+m5)/2
+  (motors 4 and 5 turning opposite ways pitch the wrist, the same way roll it).
 
 The `io` task runs on core 0 at 500 Hz. It reads these over I2C:
 - TCA9555 (0x20): home switches, DRV nFAULT, VM sense, PH lines.

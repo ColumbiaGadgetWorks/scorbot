@@ -239,7 +239,7 @@ static void TestOverCurrent() {
 }
 
 static void TestDifferentialWrist() {
-  std::puts("wrist: pitch-only move drives both wrist motors the same way");
+  std::puts("wrist: pitch-only move drives the two wrist motors opposite ways");
   Rig r;
   r.run(0.05f);
   r.robot.enable();
@@ -251,7 +251,7 @@ static void TestDifferentialWrist() {
   r.robot.moveTo(tgt, use, 1.f);
   r.run(10.f, [&] { return r.idle(); });
   const int32_t da = r.robot.status().counts[3] - a0, db = r.robot.status().counts[4] - b0;
-  CHECK(da > 100 && db > 100 && std::abs(da - db) < 30, "da %d db %d", da, db);
+  CHECK(da > 100 && db < -100 && std::abs(da + db) < 30, "da %d db %d", da, db);
 }
 
 int main() {

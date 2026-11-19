@@ -51,15 +51,18 @@ const char* ResultName(Result r) {
 }
 
 // ---------------------------------------------------------------------------
-// Mapping. Motors 3 and 4 (0-based) drive the differential wrist:
-// pitch = (m3 + m4) / 2, roll = (m3 - m4) / 2.
+// Mapping. Motors 3 and 4 (0-based) drive the bevel-gear differential wrist.
+// ER-4u manual, ch. 2: motors 4 and 5 turning opposite ways pitch the wrist,
+// the same way rolls it (checked by hand on a real arm: a pitch nod moved the
+// two encoders in opposite directions, a roll twist moved both the same way).
+// pitch = (m3 - m4) / 2, roll = (m3 + m4) / 2.
 // ---------------------------------------------------------------------------
 void Robot::motorsToJoints(const float* m, float* j) const {
   j[kBase] = m[0];
   j[kShoulder] = m[1];
   j[kElbow] = m[2];
-  j[kPitch] = 0.5f * (m[3] + m[4]);
-  j[kRoll] = 0.5f * (m[3] - m[4]);
+  j[kPitch] = 0.5f * (m[3] - m[4]);
+  j[kRoll] = 0.5f * (m[3] + m[4]);
   j[kGripper] = m[5];
 }
 
@@ -67,8 +70,8 @@ void Robot::jointsToMotors(const float* j, float* m) const {
   m[0] = j[kBase];
   m[1] = j[kShoulder];
   m[2] = j[kElbow];
-  m[3] = j[kPitch] + j[kRoll];
-  m[4] = j[kPitch] - j[kRoll];
+  m[3] = j[kRoll] + j[kPitch];
+  m[4] = j[kRoll] - j[kPitch];
   m[5] = j[kGripper];
 }
 
@@ -757,7 +760,8 @@ void Robot::invertJoint(int j) {
   if (j < 0 || j >= kJoints) return;
   int ms[2] = {j, -1};
   if (j == kPitch || j == kRoll) {
-    // Inverting a wrist joint swaps the two wrist motors' roles; flip both encoders and drives.
+    // Both wrist motors carry pitch and roll, so flip both encoders and drives
+    // (this reverses pitch and roll together).
     ms[0] = 3;
     ms[1] = 4;
   }

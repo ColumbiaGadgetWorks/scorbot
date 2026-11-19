@@ -35,10 +35,10 @@ struct SimArm : Hal {
     ToMotors(jc, mcount);
   }
   static void ToJoints(const float* m, float* j) {
-    j[0] = m[0]; j[1] = m[1]; j[2] = m[2]; j[3] = 0.5f * (m[3] + m[4]); j[4] = 0.5f * (m[3] - m[4]); j[5] = m[5];
+    j[0] = m[0]; j[1] = m[1]; j[2] = m[2]; j[3] = 0.5f * (m[3] - m[4]); j[4] = 0.5f * (m[3] + m[4]); j[5] = m[5];
   }
   static void ToMotors(const float* j, float* m) {
-    m[0] = j[0]; m[1] = j[1]; m[2] = j[2]; m[3] = j[3] + j[4]; m[4] = j[3] - j[4]; m[5] = j[5];
+    m[0] = j[0]; m[1] = j[1]; m[2] = j[2]; m[3] = j[4] + j[3]; m[4] = j[4] - j[3]; m[5] = j[5];
   }
   float jointDeg(int j) const {
     float jc[kJoints];
