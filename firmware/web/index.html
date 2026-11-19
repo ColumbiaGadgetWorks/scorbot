@@ -341,7 +341,13 @@ const Conn = {
       return this.sendNow(msg);
     }
     const q = this.queued.get(key);
-    if (q) { q.res({ok:true, superseded:true}); q.msg = msg; return new Promise(res => { q.res = res; }); }
+    if (q) {
+      // A move carries only the joints it sets (others null): merge it into the
+      // queued one, so a quick move of joint 1 then joint 2 sends both.
+      if (msg.cmd==="move" && Array.isArray(msg.pos) && Array.isArray(q.msg.pos))
+        msg = Object.assign({}, msg, {pos: msg.pos.map((v,i) => v ?? q.msg.pos[i])});
+      q.res({ok:true, superseded:true}); q.msg = msg; return new Promise(res => { q.res = res; });
+    }
     const wait = (this.lastSent.get(key) ?? -Infinity) + SEND_GAP_MS - performance.now();
     if (wait <= 0) { this.lastSent.set(key, performance.now()); return this.sendNow(msg); }
     return new Promise(res => {

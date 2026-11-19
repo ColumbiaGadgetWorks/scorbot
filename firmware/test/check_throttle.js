@@ -55,6 +55,17 @@ const check = (c, what) => { if (!c) { fails++; console.log("  FAIL", what); } }
   const r = await Promise.race([queued, sleep(20).then(() => "hung")]);
   check(r !== "hung" && r.ok && r.superseded, `superseded send settles: ${JSON.stringify(r)}`);
 
+  // 5. Moves of different joints inside one gap are merged, not dropped.
+  await sleep(80);
+  sent.length = 0;
+  Conn.send({ cmd: "move", pos: [5, null, null, null, null, null], speed: 0.5 });   // goes out
+  Conn.send({ cmd: "move", pos: [null, 7, null, null, null, null], speed: 0.5 });   // queued
+  Conn.send({ cmd: "move", pos: [null, null, 9, null, null, null], speed: 0.5 });   // merged into it
+  await sleep(80);
+  const mv = sent.filter(s => s.m.cmd === "move").map(s => s.m.pos);
+  check(mv.length === 2 && JSON.stringify(mv[1]) === JSON.stringify([null, 7, 9, null, null, null]),
+        `queued moves merged: ${JSON.stringify(mv)}`);
+
   console.log(fails ? `${fails} throttle checks failed` : "throttle checks OK");
   process.exit(fails ? 1 : 0);
 })();
