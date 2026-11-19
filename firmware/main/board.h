@@ -21,6 +21,9 @@ constexpr gpio_num_t kExpanderInt = GPIO_NUM_5;
 constexpr gpio_num_t kStatusLed = GPIO_NUM_2;
 
 constexpr uint8_t kTcaAddr = 0x20;              // TCA9555: P00-P05 = PH1-6
+// Which PH level means +duty (+encoder counts). On the ER-4u, PH high drove
+// every motor against its encoder, so +duty is PH low.
+constexpr bool kPhHighForward = false;
 constexpr uint8_t kAdsAddr[2] = {0x48, 0x49};   // ADS1115 #1: CS1-4, #2: CS5, CS6, VM/5.7, GND
 
 // TCA9555 port 1 bits
