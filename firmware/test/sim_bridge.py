@@ -7,7 +7,8 @@
 
 Runs sim_server (the firmware's robot core + JSON API on a physics sim) and
 exposes the same endpoints as the ESP32: /, /ws, /api/state, /api/cmd,
-/api/config, /api/wifi, /api/reboot.
+/api/config, /api/wifi, /api/reboot, /api/ota (stub).
+Like the ESP32, /ws carries binary wire::Live frames plus {"t":"info"} text.
 """
 import asyncio
 import itertools
@@ -24,7 +25,8 @@ INDEX = os.path.join(HERE, "..", "web", "index.html")
 class Bridge:
     def __init__(self):
         self.proc = None
-        self.state = None
+        self.state = None   # full JSON, for /api/state
+        self.info = None    # latest {"t":"info"} JSON, sent to each new /ws client
         self.sockets = set()
         self.waiters = {}
         self.ids = itertools.count(100000)
@@ -44,9 +46,13 @@ class Bridge:
             kind, _, payload = line.decode().partition(" ")
             if kind == "S":
                 self.state = payload.strip()
+            elif kind in ("L", "I"):  # same /ws traffic as the ESP32: binary live frame, info text
+                if kind == "I":
+                    self.info = payload.strip()
+                data = bytes.fromhex(payload.strip()) if kind == "L" else self.info
                 for ws in list(self.sockets):
                     try:
-                        await ws.send_str(self.state)
+                        await (ws.send_bytes(data) if kind == "L" else ws.send_str(data))
                     except Exception:
                         self.sockets.discard(ws)
             elif kind == "R":
@@ -74,6 +80,8 @@ async def index(_):
 async def ws_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
+    if bridge.info:
+        await ws.send_str(bridge.info)
     bridge.sockets.add(ws)
     async for msg in ws:
         if msg.type != WSMsgType.TEXT:
@@ -113,6 +121,18 @@ async def api_wifi(request):
     return web.json_response({"ssid": "", "hostname": "scorbot", "has_password": False, "has_api_key": False})
 
 
+async def api_ota(request):  # firmware updates: nothing to update in the simulator
+    status = {"version": "simulator", "variant": "sim", "driver": "simulated", "slot": "ota_0", "ota_layout": True,
+              "busy": False, "progress": -1, "state": "idle", "latest": "", "message": ""}
+    if request.method == "POST":
+        status["message"] = "simulator: no firmware updates"
+    return web.json_response(status)
+
+
+async def not_found(_):  # like the ESP32's captive-portal handler
+    raise web.HTTPFound("/")
+
+
 async def api_sim(request):  # test hook (E-stop etc.)
     return web.json_response(await bridge.call(dict(await request.json(), cmd="__sim")))
 
@@ -124,7 +144,9 @@ async def main(port):
                     web.post("/api/cmd", api_cmd), web.get("/api/config", api_config),
                     web.post("/api/config", api_config), web.get("/api/wifi", api_wifi),
                     web.post("/api/wifi", api_wifi), web.post("/api/reboot", api_wifi),
-                    web.post("/api/sim", api_sim)])
+                    web.post("/api/sim", api_sim), web.get("/api/ota", api_ota),
+                    web.post("/api/ota/check", api_ota), web.post("/api/ota/install", api_ota),
+                    web.post("/api/ota/upload", api_ota), web.get("/favicon.ico", not_found)])
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", port).start()

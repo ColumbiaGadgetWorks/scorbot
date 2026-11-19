@@ -27,6 +27,13 @@ jobs:
             g++ -std=c++17 -O2 -Wall -Wextra -D$d -Ifirmware/main firmware/test/test_core.cpp \
               firmware/main/core/robot.cpp firmware/main/core/config.cpp -o /tmp/t && /tmp/t
           done
+      - name: Binary /ws frame (C++ layout and page decoder against the JSON state)
+        run: |
+          git clone -q --depth 1 -b v1.7.18 https://github.com/DaveGamble/cJSON /tmp/cJSON
+          make -C firmware/test sim_server CJSON=/tmp/cJSON
+          python3 firmware/test/check_wire.py
+      - name: Web page command throttle
+        run: node firmware/test/check_throttle.js
 
   build:
     runs-on: ubuntu-latest

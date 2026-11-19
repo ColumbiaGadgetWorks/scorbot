@@ -266,6 +266,36 @@ let demo = null;       // MockRobot when no controller is reachable
 function toast(msg, ms=2600){ const t=$("#toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(toast.t); toast.t=setTimeout(()=>t.classList.remove("on"),ms); }
 
 // ---------------------------------------------------------------------------
+// Live state on /ws: binary wire::Live frames (firmware/main/api.h), read in
+// place through typed-array views over the received buffer: no parsing, no
+// copies. Test/calibration results and static hardware info arrive separately
+// as {"t":"info"} JSON, only when they change.
+// ---------------------------------------------------------------------------
+const MODES = ["disabled","idle","moving","jog","homing","calibrating","test","fault","estop"];  // scorbot::Mode
+const LIVE = {magic:0x5342, version:1, size:284};
+let INFO = {mtest:Array.from({length:6},()=>({r:"pending",note:""})), cal:Array.from({length:6},()=>({r:"pending",note:""})), hw:{}};
+const utf8 = new TextDecoder();
+function cstr(buf, off, n){ const b=new Uint8Array(buf, off, n), z=b.indexOf(0); return utf8.decode(z<0?b:b.subarray(0,z)); }
+function bits(v, n){ const a=new Array(n); for(let i=0;i<n;i++) a[i]=!!((v>>i)&1); return a; }
+function decodeLive(buf){
+  if (buf.byteLength < LIVE.size) return null;
+  const u8 = new Uint8Array(buf, 0, 12);
+  if ((u8[0] | u8[1]<<8) !== LIVE.magic || u8[2] !== LIVE.version) return null;  // stale page after a firmware change: reload
+  const f = u8[4], vm = new Float32Array(buf, 12, 1)[0];
+  return Object.assign({
+    t:"state", mode:MODES[u8[3]]||"?", enabled:!!(f&1), vm_ok:!!(f&2), drv_fault:!!(f&4),
+    busy:new Int8Array(buf, 5, 1)[0], homed:bits(u8[6],6), calibrated:bits(u8[7],6),
+    sw:bits(u8[8],5), sw_on:bits(u8[9],5), sw_off:bits(u8[10],5),
+    vm:Number.isNaN(vm)?null:vm,
+    pos:new Float32Array(buf, 16, 6), tgt:new Float32Array(buf, 40, 6), duty:new Float32Array(buf, 64, 6),
+    cur:new Float32Array(buf, 88, 6),  // NaN = no ADC
+    counts:new Int32Array(buf, 112, 6), emin:new Int32Array(buf, 136, 6), emax:new Int32Array(buf, 160, 6),
+    fault:cstr(buf, 188, 64), phase:cstr(buf, 252, 32),
+  }, {mtest:INFO.mtest, cal:INFO.cal, hw:Object.assign({}, INFO.hw, {rssi:new Int8Array(buf, 11, 1)[0], uptime:new Uint32Array(buf, 184, 1)[0]})});
+}
+let staleWarned = false;
+
+// ---------------------------------------------------------------------------
 // connection: WebSocket for state + commands, REST for config
 // ---------------------------------------------------------------------------
 // Outgoing commands are throttled to one per command+joint/motor every
@@ -283,9 +313,20 @@ const Conn = {
     let firstFail = true;
     const open = () => {
       const ws = new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");
+      ws.binaryType = "arraybuffer";
       this.ws = ws;
       ws.onopen = () => { this.up=true; firstFail=false; setConn(true); loadConfig(); };
-      ws.onmessage = ev => { let m; try{ m=JSON.parse(ev.data);}catch(e){return;} if(m.t==="state") onState(m); else if(m.t==="reply"&&this.pending.has(m.id)){ this.pending.get(m.id)(m); this.pending.delete(m.id);} };
+      ws.onmessage = ev => {
+        if (ev.data instanceof ArrayBuffer) {
+          const s = decodeLive(ev.data);
+          if (s) onState(s); else if (!staleWarned) { staleWarned=true; toast("⚠ Controller firmware changed: reload this page", 8000); }
+          return;
+        }
+        let m; try{ m=JSON.parse(ev.data);}catch(e){return;}
+        if (m.t==="info") { INFO = m; if (S) { S.mtest=m.mtest; S.cal=m.cal; S.hw=Object.assign({}, m.hw, {rssi:S.hw.rssi, uptime:S.hw.uptime}); scheduleRender(); } }
+        else if (m.t==="state") onState(m);
+        else if (m.t==="reply"&&this.pending.has(m.id)) { this.pending.get(m.id)(m); this.pending.delete(m.id); }
+      };
       ws.onclose = () => { this.up=false; setConn(false); if(firstFail && !demo){ startDemo(); return; } setTimeout(open, 1500); };
     };
     open();
@@ -463,8 +504,8 @@ function renderTest(){
     const r=motorRows[m], t=S.mtest[m];
     setBadge(r.res, t.r); r.f.textContent = t.r==="pending"?"":t.fwd; r.b.textContent = t.r==="pending"?"":t.rev; r.i.textContent = t.r==="pending"?"":fmt(t.i,2); r.note.textContent=t.note;
     const d=S.duty[m]||0; const di=r.duty.firstChild; di.style.left=(d>=0?50:50+d*50)+"%"; di.style.width=Math.abs(d)*50+"%";
-    const c=S.cur[m]; const ci=r.cur.firstChild; ci.style.width = (c==null?0:Math.min(100,c/full*100))+"%"; ci.style.background = c!=null&&c>lim?"var(--bad)":"var(--accent)";
-    r.cur.lastChild.style.left = (lim/full*100)+"%"; r.cur.title = c==null?"no ADC":fmt(c,2)+" A";
+    const c=S.cur[m], noAdc = c==null || Number.isNaN(c); const ci=r.cur.firstChild; ci.style.width = (noAdc?0:Math.min(100,c/full*100))+"%"; ci.style.background = !noAdc&&c>lim?"var(--bad)":"var(--accent)";
+    r.cur.lastChild.style.left = (lim/full*100)+"%"; r.cur.title = noAdc?"no ADC":fmt(c,2)+" A";
     const er=encRows[m]; er.c.textContent=S.counts[m]; er.rate.textContent=fmt(Math.abs(rates[m])<0.5?0:rates[m],0);
     const span=S.emax[m]-S.emin[m]; er.range.textContent = span;
     const a=Math.max(-1,Math.min(1,rates[m]/2000)); const ai=er.act.firstChild; ai.style.left=(a>=0?50:50+a*50)+"%"; ai.style.width=Math.abs(a)*50+"%";

@@ -1,6 +1,7 @@
 #include "api.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 using namespace scorbot;
@@ -30,6 +31,44 @@ int IntField(const cJSON* msg, const char* k, int dflt) {
 double NumField(const cJSON* msg, const char* k, double dflt) {
   const cJSON* n = cJSON_GetObjectItemCaseSensitive(msg, k);
   return cJSON_IsNumber(n) ? n->valuedouble : dflt;
+}
+
+// mtest, cal and the static part of hw: the slow-changing state.
+void AddInfo(cJSON* o, const InfoSnapshot& snap, const HwInfo& hw) {
+  cJSON* tests = cJSON_AddArrayToObject(o, "mtest");
+  for (int m = 0; m < kMotors; ++m) {
+    const MotorTestResult& r = snap.mtest[m];
+    cJSON* t = cJSON_CreateObject();
+    cJSON_AddStringToObject(t, "r", ResultName(r.result));
+    cJSON_AddNumberToObject(t, "fwd", r.delta_fwd);
+    cJSON_AddNumberToObject(t, "rev", r.delta_rev);
+    cJSON_AddItemToObject(t, "i", Num(R(r.peak_current, 2)));
+    cJSON_AddStringToObject(t, "note", r.note);
+    cJSON_AddItemToArray(tests, t);
+  }
+  cJSON* cals = cJSON_AddArrayToObject(o, "cal");
+  for (int j = 0; j < kJoints; ++j) {
+    const CalibResult& r = snap.cal[j];
+    cJSON* c = cJSON_CreateObject();
+    cJSON_AddStringToObject(c, "r", ResultName(r.result));
+    cJSON_AddNumberToObject(c, "min", r.min_counts);
+    cJSON_AddNumberToObject(c, "max", r.max_counts);
+    cJSON_AddItemToObject(c, "cpu", Num(R(r.counts_per_unit, 2)));
+    cJSON_AddItemToObject(c, "home", Num(R(r.home_pos, 2)));
+    cJSON_AddItemToObject(c, "smin", Num(R(r.soft_min, 1)));
+    cJSON_AddItemToObject(c, "smax", Num(R(r.soft_max, 1)));
+    cJSON_AddStringToObject(c, "note", r.note);
+    cJSON_AddItemToArray(cals, c);
+  }
+
+  cJSON* h = cJSON_AddObjectToObject(o, "hw");
+  cJSON_AddBoolToObject(h, "expander", hw.expander);
+  cJSON_AddBoolToObject(h, "adc0", hw.adc[0]);
+  cJSON_AddBoolToObject(h, "adc1", hw.adc[1]);
+  cJSON_AddStringToObject(h, "net", hw.net_mode);
+  cJSON_AddStringToObject(h, "ip", hw.ip);
+  cJSON_AddStringToObject(h, "ssid", hw.ssid);
+  cJSON_AddStringToObject(h, "reset", hw.reset);  // rssi and uptime change often: they go in the live frame
 }
 
 }  // namespace
@@ -64,44 +103,60 @@ cJSON* State(const Robot& robot, const RobotConfig& cfg, const HwInfo& hw) {
   for (int j = 0; j < kJoints; ++j) cal[j] = cfg.joint[j].cpu_calibrated;
   cJSON_AddItemToObject(o, "calibrated", Arr(cal, kJoints, [](bool v) { return cJSON_CreateBool(v); }));
 
-  cJSON* tests = cJSON_AddArrayToObject(o, "mtest");
-  for (int m = 0; m < kMotors; ++m) {
-    const MotorTestResult& r = robot.motorTest(m);
-    cJSON* t = cJSON_CreateObject();
-    cJSON_AddStringToObject(t, "r", ResultName(r.result));
-    cJSON_AddNumberToObject(t, "fwd", r.delta_fwd);
-    cJSON_AddNumberToObject(t, "rev", r.delta_rev);
-    cJSON_AddItemToObject(t, "i", Num(R(r.peak_current, 2)));
-    cJSON_AddStringToObject(t, "note", r.note);
-    cJSON_AddItemToArray(tests, t);
-  }
-  cJSON* cals = cJSON_AddArrayToObject(o, "cal");
-  for (int j = 0; j < kJoints; ++j) {
-    const CalibResult& r = robot.calibResult(j);
-    cJSON* c = cJSON_CreateObject();
-    cJSON_AddStringToObject(c, "r", ResultName(r.result));
-    cJSON_AddNumberToObject(c, "min", r.min_counts);
-    cJSON_AddNumberToObject(c, "max", r.max_counts);
-    cJSON_AddItemToObject(c, "cpu", Num(R(r.counts_per_unit, 2)));
-    cJSON_AddItemToObject(c, "home", Num(R(r.home_pos, 2)));
-    cJSON_AddItemToObject(c, "smin", Num(R(r.soft_min, 1)));
-    cJSON_AddItemToObject(c, "smax", Num(R(r.soft_max, 1)));
-    cJSON_AddStringToObject(c, "note", r.note);
-    cJSON_AddItemToArray(cals, c);
-  }
-
-  cJSON* h = cJSON_AddObjectToObject(o, "hw");
-  cJSON_AddBoolToObject(h, "expander", hw.expander);
-  cJSON_AddBoolToObject(h, "adc0", hw.adc[0]);
-  cJSON_AddBoolToObject(h, "adc1", hw.adc[1]);
-  cJSON_AddStringToObject(h, "net", hw.net_mode);
-  cJSON_AddStringToObject(h, "ip", hw.ip);
-  cJSON_AddStringToObject(h, "ssid", hw.ssid);
-  cJSON_AddNumberToObject(h, "rssi", hw.rssi);
-  cJSON_AddNumberToObject(h, "uptime", hw.uptime_s);
-  cJSON_AddStringToObject(h, "reset", hw.reset);
+  InfoSnapshot snap;
+  Snapshot(robot, &snap);
+  AddInfo(o, snap, hw);
+  cJSON_AddNumberToObject(cJSON_GetObjectItemCaseSensitive(o, "hw"), "rssi", hw.rssi);
+  cJSON_AddNumberToObject(cJSON_GetObjectItemCaseSensitive(o, "hw"), "uptime", hw.uptime_s);
   return o;
 }
+
+void Snapshot(const Robot& robot, InfoSnapshot* out) {
+  for (int m = 0; m < kMotors; ++m) out->mtest[m] = robot.motorTest(m);
+  for (int j = 0; j < kJoints; ++j) out->cal[j] = robot.calibResult(j);
+}
+
+cJSON* Info(const InfoSnapshot& snap, const HwInfo& hw) {
+  cJSON* o = cJSON_CreateObject();
+  cJSON_AddStringToObject(o, "t", "info");
+  AddInfo(o, snap, hw);
+  return o;
+}
+
+void FillLive(const Robot& robot, const RobotConfig& cfg, const HwInfo& hw, wire::Live* out) {
+  const Status& s = robot.status();
+  wire::Live& w = *out;
+  std::memset(&w, 0, sizeof(w));
+  w.magic = wire::kMagic;
+  w.version = wire::kVersion;
+  w.mode = static_cast<uint8_t>(s.mode);
+  w.flags = (s.enabled ? 1 : 0) | (s.vm_ok ? 2 : 0) | (s.driver_fault ? 4 : 0);
+  w.busy = static_cast<int8_t>(s.busy_joint);
+  for (int j = 0; j < kJoints; ++j) {
+    w.homed |= s.homed[j] << j;
+    w.calibrated |= cfg.joint[j].cpu_calibrated << j;
+    w.pos[j] = s.pos[j];
+    w.tgt[j] = s.target[j];
+  }
+  for (int i = 0; i < kSwitches; ++i) {
+    w.sw |= s.sw[i] << i;
+    w.sw_on |= s.sw_seen_on[i] << i;
+    w.sw_off |= s.sw_seen_off[i] << i;
+  }
+  w.rssi = static_cast<int8_t>(hw.rssi < -128 ? -128 : (hw.rssi > 0 ? 0 : hw.rssi));
+  w.vm = s.vm;
+  for (int m = 0; m < kMotors; ++m) {
+    w.duty[m] = s.duty[m];
+    w.cur[m] = s.current[m];
+    w.counts[m] = s.counts[m];
+    w.emin[m] = s.enc_min[m];
+    w.emax[m] = s.enc_max[m];
+  }
+  w.uptime_s = hw.uptime_s;
+  std::snprintf(w.fault, sizeof(w.fault), "%s", s.fault);
+  std::snprintf(w.phase, sizeof(w.phase), "%s", s.phase);
+}
+
 
 void Command(Robot& robot, RobotConfig& cfg, const cJSON* msg, cJSON* reply, bool* config_changed) {
   const cJSON* c = cJSON_GetObjectItemCaseSensitive(msg, "cmd");
