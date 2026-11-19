@@ -21,19 +21,19 @@ constexpr const char* kDriverName = "DRV8876 (Pololu #4036)";
 constexpr const char* kVariantId = "pololu4036";  // firmware build for OTA updates
 constexpr float kCsVoltsPerAmp = 2.49f;        // 1000 uA/A x 2.49k
 constexpr float kDriverCurrentLimitA = 1.33f;  // carrier rated 1.3 A continuous
-constexpr float kDefaultTripA = 1.2f;
+constexpr float kDefaultTripA = 1.25f;
 #elif defined(SCORBOT_POLOLU_4035) || defined(CONFIG_SCORBOT_DRIVER_POLOLU_4035)
 constexpr const char* kDriverName = "DRV8874 (Pololu #4035)";
 constexpr const char* kVariantId = "pololu4035";
 constexpr float kCsVoltsPerAmp = 1.12f;        // 450 uA/A x 2.49k
 constexpr float kDriverCurrentLimitA = 2.94f;  // carrier rated 2.1 A continuous
-constexpr float kDefaultTripA = 2.5f;
+constexpr float kDefaultTripA = 2.8f;
 #else  // hardware/drv8874-carrier (the default)
 constexpr const char* kDriverName = "DRV8874 (CGW carrier)";
 constexpr const char* kVariantId = "cgw";
 constexpr float kCsVoltsPerAmp = 1.08f;        // 450 uA/A x 2.4k (a JLC Basic value)
 constexpr float kDriverCurrentLimitA = 3.06f;
-constexpr float kDefaultTripA = 2.5f;
+constexpr float kDefaultTripA = 2.9f;
 #endif
 
 // Fault filtering (see Robot::update): how long a condition must last.
@@ -52,6 +52,7 @@ struct MotorConfig {
   float i_zone = 300.f;     // integrate only when |error| < this many counts
   float min_duty = 0.30f;   // static-friction compensation (reference build needed ~0.8)
   float max_duty = 1.0f;
+  float trip_a = kDefaultTripA;  // software over-current trip, below kDriverCurrentLimitA
 };
 
 struct JointConfig {
@@ -80,7 +81,7 @@ struct RobotConfig {
   float calib_duty = 0.6f;          // duty cap while driving into hard stops
   float test_duty = 0.7f;           // duty for the open-loop motor test
   uint16_t test_ms = 300;           // pulse length per direction for the motor test
-  float current_limit_a = kDefaultTripA;  // software over-current trip, below kDriverCurrentLimitA
+  uint16_t trip_ms = 1000;          // over-current must last this long to trip (the driver chops anyway)
   uint8_t home_order[kJoints] = {kShoulder, kElbow, kPitch, kRoll, kGripper, kBase};
   float gripper_open_mm = 40.f;     // opening after homing the gripper
   uint16_t jog_timeout_ms = 300;    // jog stops if no heartbeat

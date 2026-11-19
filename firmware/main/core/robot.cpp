@@ -94,6 +94,14 @@ float Robot::countsToUnit(int j, float c) const {
 // ---------------------------------------------------------------------------
 void Robot::update(float dt) {
   readInputs(dt);
+  // Hand calibration: record the extent of the switch's pressed region.
+  if (hand_j_ >= 0 && hand_j_ < kSwitches && st_.sw[hand_j_]) {
+    const float c = jointCounts(hand_j_);
+    if (!hand_sw_seen_) hand_sw_lo_ = hand_sw_hi_ = c;
+    hand_sw_seen_ = true;
+    hand_sw_lo_ = std::min(hand_sw_lo_, c);
+    hand_sw_hi_ = std::max(hand_sw_hi_, c);
+  }
   if (st_.mode == Mode::kHoming || st_.mode == Mode::kCalibrating || st_.mode == Mode::kTest) runJob(dt);
   control(dt);
   float jc[kJoints];
@@ -159,14 +167,14 @@ void Robot::readInputs(float dt) {
       return;
     }
     for (int m = 0; m < kMotors; ++m) {
-      if (!std::isnan(st_.current[m]) && st_.current[m] > cfg_.current_limit_a)
+      if (!std::isnan(st_.current[m]) && st_.current[m] > cfg_.motor[m].trip_a)
         oc_ms_[m] += dt * 1000.f;
       else
         oc_ms_[m] = 0;
       // The driver chops just above the trip, so a stall sits there.
       // Wait long enough for the stall and following-error checks to name
       // the problem first; this catches sustained overload while moving.
-      if (oc_ms_[m] > 500.f) {
+      if (oc_ms_[m] > cfg_.trip_ms) {
         char buf[48];
         std::snprintf(buf, sizeof(buf), "over-current on motor %d", m + 1);
         fault(buf);
@@ -302,10 +310,9 @@ void Robot::fault(const char* why) {
 // Commands
 // ---------------------------------------------------------------------------
 bool Robot::enable() {
-  if (st_.mode == Mode::kFault || st_.mode == Mode::kEStop) {
-    std::snprintf(err_, sizeof(err_), "clear the fault first");
-    return false;
-  }
+  // Enabling also clears a fault or E-stop latch (no separate Clear step);
+  // after an E-stop, motor power must be back first.
+  if ((st_.mode == Mode::kFault || st_.mode == Mode::kEStop) && !resetFault()) return false;
   if (!hal_.motorPowerOk()) {
     std::snprintf(err_, sizeof(err_), "no motor power (E-stop open?)");
     return false;
@@ -731,6 +738,94 @@ bool Robot::selfTest() {
   test_kind_ = TestKind::kSelfTest;
   st_.mode = Mode::kTest;
   nextQueued();
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Hand calibration: motors off, the user moves one joint by hand from one end
+// of its travel to the other (through the home switch), marking each end.
+// Same result as calibrate() without driving into the stops, and it leaves
+// the joint homed.
+// ---------------------------------------------------------------------------
+bool Robot::handBegin(int j) {
+  if (j < 0 || j >= kJoints) return false;
+  if (st_.enabled) {
+    std::snprintf(err_, sizeof(err_), "disable the motors first");
+    return false;
+  }
+  hand_j_ = j;
+  hand_has_[0] = hand_has_[1] = false;
+  hand_sw_seen_ = false;
+  calib_[j] = CalibResult();
+  return true;
+}
+
+bool Robot::handMark(int j, int end) {
+  if (j < 0 || j != hand_j_ || end < 0 || end > 1) {
+    std::snprintf(err_, sizeof(err_), "start hand calibration of that joint first");
+    return false;
+  }
+  hand_mark_[end] = jointCounts(j);
+  hand_has_[end] = true;
+  return true;
+}
+
+bool Robot::handFinish(int j) {
+  if (j < 0 || j != hand_j_ || !hand_has_[0] || !hand_has_[1]) {
+    std::snprintf(err_, sizeof(err_), "mark both ends first");
+    return false;
+  }
+  const JointConfig& jc = cfg_.joint[j];
+  CalibResult& r = calib_[j];
+  r = CalibResult();
+  const float lo = std::min(hand_mark_[0], hand_mark_[1]), hi = std::max(hand_mark_[0], hand_mark_[1]);
+  r.min_counts = static_cast<int32_t>(lo);
+  r.max_counts = static_cast<int32_t>(hi);
+  const float span = hi - lo;
+  const bool sw = j < kSwitches && jc.has_switch;
+  const char* unit = j == kGripper ? "mm" : "deg";
+  if (span < 50.f)
+    std::snprintf(r.note, sizeof(r.note), "span only %.0f counts: move it end to end", span);
+  else if (sw && !hand_sw_seen_)
+    std::snprintf(r.note, sizeof(r.note), "home switch never pressed: move through it");
+  if (r.note[0]) {
+    r.result = Result::kFail;
+    std::snprintf(err_, sizeof(err_), "%s", r.note);
+    return false;
+  }
+  // The zero is the switch edge homing finds: the home_dir side of the pressed region.
+  const float edge = jc.home_dir > 0 ? hand_sw_hi_ : hand_sw_lo_;
+  float zero;
+  if (jc.continuous) {  // the two marks are one full turn apart
+    r.counts_per_unit = span / 360.f;
+    r.home_pos = jc.home_pos;
+    r.soft_min = jc.soft_min;
+    r.soft_max = jc.soft_max;
+    zero = sw ? edge : jointCounts(j);
+  } else {
+    r.counts_per_unit = span / (jc.spec_max - jc.spec_min);
+    const float margin = j == kGripper ? 1.f : 3.f;
+    r.soft_min = jc.spec_min + margin;
+    r.soft_max = jc.spec_max - margin;
+    if (sw) {
+      zero = edge;
+      r.home_pos = jc.spec_min + (edge - lo) / r.counts_per_unit;
+    } else {  // gripper: the closed end reads spec_min
+      r.home_pos = jc.home_pos;
+      zero = lo + (jc.home_pos - jc.spec_min) * r.counts_per_unit;
+    }
+  }
+  r.home_counts = static_cast<int32_t>(zero);
+  r.result = Result::kPass;
+  if (sw)
+    std::snprintf(r.note, sizeof(r.note), "%.1f counts/%s, switch at %.1f %s", r.counts_per_unit, unit, r.home_pos, unit);
+  else
+    std::snprintf(r.note, sizeof(r.note), "%.1f counts/%s", r.counts_per_unit, unit);
+  applyCalibration(j);
+  zero_[j] = zero;
+  st_.homed[j] = true;
+  jtarget_[j] = jointCounts(j);
+  hand_j_ = -1;
   return true;
 }
 

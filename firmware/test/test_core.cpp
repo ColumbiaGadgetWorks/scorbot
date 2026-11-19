@@ -1,5 +1,7 @@
 // Host tests for the portable robot core, run against SimArm.
 // Build and run: make -C firmware/test
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -251,13 +253,66 @@ static void TestOverCurrent() {
   r.run(0.05f);
   r.robot.enable();
   r.sim.extra_amps[kElbow] = high;
-  r.run(0.3f);
+  r.run(0.8f);
   CHECK(r.robot.status().mode != Mode::kFault, "tripped early: '%s'", r.robot.status().fault);
   r.sim.extra_amps[kElbow] = 0;
   r.run(0.3f);
   r.sim.extra_amps[kElbow] = high;
-  r.run(0.6f);
+  r.run(1.2f);
   CHECK(std::strstr(r.robot.status().fault, "over-current on motor 3") != nullptr, "fault '%s'", r.robot.status().fault);
+  // Enabling again clears the fault: no separate reset step.
+  r.sim.extra_amps[kElbow] = 0;
+  CHECK(r.robot.enable(), "re-enable after fault: %s", r.robot.lastError());
+  CHECK(r.robot.status().mode != Mode::kFault && r.robot.status().enabled, "mode %s", ModeName(r.robot.status().mode));
+}
+
+static void TestHandCalibrate() {
+  std::puts("hand calibration: motors off, move a joint end to end by hand");
+  Rig r;
+  r.run(0.05f);
+  r.robot.enable();
+  CHECK(!r.robot.handBegin(kShoulder), "must refuse while enabled");
+  r.robot.disable();
+  // Moves the shoulder by hand (motors off) to deg, in small steps.
+  auto handTo = [&](float deg) {
+    float jc[kJoints];
+    for (int i = 0; i < 400; ++i) {
+      SimArm::ToJoints(r.sim.mcount, jc);
+      const float cur = jc[kShoulder] / r.sim.true_cpu[kShoulder];
+      const float step = std::max(-0.5f, std::min(0.5f, deg - cur));
+      if (std::fabs(step) < 1e-4f) break;
+      jc[kShoulder] += step * r.sim.true_cpu[kShoulder];
+      SimArm::ToMotors(jc, r.sim.mcount);
+      r.run(0.005f);
+    }
+  };
+  CHECK(r.robot.handBegin(kShoulder), "%s", r.robot.lastError());
+  handTo(r.sim.stop_min[kShoulder]);
+  CHECK(r.robot.handMark(kShoulder, 0), "%s", r.robot.lastError());
+  CHECK(!r.robot.handFinish(kShoulder), "finish needs both ends");
+  handTo(r.sim.stop_max[kShoulder]);
+  CHECK(r.robot.handMark(kShoulder, 1), "%s", r.robot.lastError());
+  CHECK(r.robot.handFinish(kShoulder), "%s", r.robot.lastError());
+  const CalibResult& c = r.robot.calibResult(kShoulder);
+  const float err = (c.counts_per_unit - r.sim.true_cpu[kShoulder]) / r.sim.true_cpu[kShoulder];
+  CHECK(std::fabs(err) < 0.02f, "cpu %.1f vs true %.1f", c.counts_per_unit, r.sim.true_cpu[kShoulder]);
+  CHECK(r.robot.status().homed[kShoulder], "should be homed");
+  handTo(70.f);
+  r.run(0.05f);
+  CHECK(std::fabs(r.robot.status().pos[kShoulder] - 70.f) < 1.f, "reads %.2f, true 70", r.robot.status().pos[kShoulder]);
+  // Its switch zero matches what homing finds: the low edge of the switch (home_dir -1).
+  const float edge = r.sim.switch_at[kShoulder] - r.sim.switch_width / 2;
+  CHECK(std::fabs(c.home_pos - edge) < 1.f, "switch at %.2f, true edge %.2f", c.home_pos, edge);
+  // Missing the switch is refused.
+  CHECK(r.robot.handBegin(kElbow), "%s", r.robot.lastError());
+  CHECK(r.robot.handMark(kElbow, 0), "%s", r.robot.lastError());
+  float jc[kJoints];
+  SimArm::ToJoints(r.sim.mcount, jc);
+  jc[kElbow] += 5000;
+  SimArm::ToMotors(jc, r.sim.mcount);
+  r.run(0.01f);
+  CHECK(r.robot.handMark(kElbow, 1), "%s", r.robot.lastError());
+  CHECK(!r.robot.handFinish(kElbow), "should fail without the switch");
 }
 
 static void TestDifferentialWrist() {
@@ -288,6 +343,7 @@ int main() {
   TestEStopAndFaults();
   TestFaultFiltering();
   TestOverCurrent();
+  TestHandCalibrate();
   TestDifferentialWrist();
   std::printf("\n%d checks passed, %d failed\n", g_pass, g_fail);
   return g_fail ? 1 : 0;

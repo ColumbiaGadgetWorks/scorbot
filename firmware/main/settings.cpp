@@ -54,6 +54,9 @@ void BindMotor(Io io, MotorConfig& m) {
   io.f("i_zone", m.i_zone);
   io.f("min_duty", m.min_duty);
   io.f("max_duty", m.max_duty);
+  io.f("trip_a", m.trip_a);
+  // a trip at or above the driver's own limit would never fire
+  if (m.trip_a <= 0 || m.trip_a >= scorbot::kDriverCurrentLimitA) m.trip_a = scorbot::kDefaultTripA;
   if (m.motor_dir != -1) m.motor_dir = 1;
   if (m.enc_dir != -1) m.enc_dir = 1;
 }
@@ -84,9 +87,8 @@ void BindGlobals(Io io, RobotConfig& c) {
   io.f("calib_duty", c.calib_duty);
   io.f("test_duty", c.test_duty);
   io.i("test_ms", c.test_ms);
-  io.f("current_limit_a", c.current_limit_a);
-  // a trip at or above the driver's own limit would never fire
-  if (c.current_limit_a <= 0 || c.current_limit_a >= scorbot::kDriverCurrentLimitA) c.current_limit_a = RobotConfig{}.current_limit_a;
+  io.i("trip_ms", c.trip_ms);
+  if (c.trip_ms < 50) c.trip_ms = RobotConfig{}.trip_ms;
   io.f("gripper_open_mm", c.gripper_open_mm);
   io.i("jog_timeout_ms", c.jog_timeout_ms);
 }

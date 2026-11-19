@@ -202,6 +202,21 @@ void Command(Robot& robot, RobotConfig& cfg, const cJSON* msg, cJSON* reply, boo
       ok = robot.applyCalibration(joint);
     }
     *config_changed = ok;
+  } else if (!std::strcmp(cmd, "hand_begin")) {
+    ok = robot.handBegin(joint);
+  } else if (!std::strcmp(cmd, "hand_mark")) {
+    ok = robot.handMark(joint, IntField(msg, "end", -1));
+  } else if (!std::strcmp(cmd, "hand_finish")) {
+    ok = robot.handFinish(joint);
+    *config_changed = ok;
+    if (ok) {
+      const CalibResult& r = robot.calibResult(joint);
+      cJSON_AddStringToObject(reply, "note", r.note);
+      cJSON_AddItemToObject(reply, "cpu", Num(R(r.counts_per_unit, 2)));
+      cJSON_AddItemToObject(reply, "home", Num(R(r.home_pos, 2)));
+      cJSON_AddItemToObject(reply, "smin", Num(R(r.soft_min, 1)));
+      cJSON_AddItemToObject(reply, "smax", Num(R(r.soft_max, 1)));
+    }
   } else if (!std::strcmp(cmd, "test_motor")) {
     ok = robot.testMotor(motor);
   } else if (!std::strcmp(cmd, "self_test")) {

@@ -88,6 +88,12 @@ class Robot {
   void invertJoint(int joint);       // flips encoder + motor sign together
   void setZeroHere(int joint);       // current position = home_pos, marks homed
   void setCountsPerUnit(int joint, float cpu);
+  // Hand calibration, motors off: begin, move joint j by hand to each end of
+  // its travel (passing its home switch) and mark it, then finish. Finish
+  // applies counts/unit, soft limits and the switch position, and homes j.
+  bool handBegin(int joint);
+  bool handMark(int joint, int end);  // end 0 or 1, either order
+  bool handFinish(int joint);
   void resetSwitchTest();
   void resetEncoderTest();
 
@@ -170,6 +176,11 @@ class Robot {
   float nfault_ms_ = 0;       // how long nFAULT has been asserted
   float since_enable_ms_ = 0; // time since the drivers were woken
   bool sw_prev_[kSwitches] = {};
+  int hand_j_ = -1;  // joint under hand calibration, -1 = none
+  float hand_mark_[2] = {};
+  bool hand_has_[2] = {};
+  bool hand_sw_seen_ = false;
+  float hand_sw_lo_ = 0, hand_sw_hi_ = 0;  // joint counts where its switch read pressed
 };
 
 }  // namespace scorbot

@@ -105,7 +105,7 @@ form.cfg label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:v
   <button id="enableBtn" class="primary">Enable</button>
   <button id="stopBtn" class="danger" title="Stop all motion (Esc)">STOP</button>
 </header>
-<div class="fault" id="faultBar"><span id="faultText"></span><span class="spacer"></span><button id="resetBtn">Clear fault</button></div>
+<div class="fault" id="faultBar"><span id="faultText"></span><span class="spacer"></span><span class="muted">Enable again to clear it.</span></div>
 <div class="banner" id="demoBar">Demo mode: no controller found, so this page is driving a simulated arm. Open it from the controller's IP to drive the real one.</div>
 <nav id="tabs">
   <button data-tab="control" class="on">Control</button>
@@ -173,6 +173,10 @@ form.cfg label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:v
 <!-- ======================= CALIBRATE ======================= -->
 <section class="tab" id="tab-calib">
   <ol class="steps">
+    <li><h4>Hand calibration (motors off)</h4>
+      <p class="muted" style="margin:0 0 8px">One joint at a time, move the arm by hand to each end of its travel and mark it. This measures counts per degree, the home switch position and the soft limits, saves them on the controller (kept across firmware updates) and leaves the joint homed. Nothing is driven into a hard stop. Then a short test checks that each motor turns the way the model expects.</p>
+      <div id="handWiz"></div>
+    </li>
     <li><h4>Home</h4>
       <p class="muted" style="margin:0 0 8px">Each joint seeks its switch, creeps across it and zeroes on the far edge, always approached the same way. The gripper closes until it stalls. Order: shoulder, elbow, pitch, roll, gripper, base (base last; it swings).</p>
       <div class="row" id="homeBtns"></div>
@@ -505,8 +509,8 @@ function renderTest(){
   $("#selfTestProg").style.width = (testing? (done/6*100):0)+"%";
   $("#selfTestState").textContent = testing ? `testing ${MN[S.busy]||""}…` : (done? `${S.mtest.filter(t=>t.r==="pass").length}/6 passed` : "");
   for(let i=0;i<5;i++){ const l=lamps[i]; l.classList.toggle("on", S.sw[i]); l.lastChild.textContent = (S.sw_on[i]?"✓":"○")+" on  "+(S.sw_off[i]&&S.sw_on[i]?"✓":"○")+" off"; }
-  const lim = (CFG && CFG.current_limit_a) || 2.5, full = Math.max(1.5, lim * 1.25);
   for(let m=0;m<6;m++){
+    const lim = (CFG && CFG.motors[m].trip_a) || 2.5, full = Math.max(1.5, lim * 1.25);
     const r=motorRows[m], t=S.mtest[m];
     setBadge(r.res, t.r); r.f.textContent = t.r==="pending"?"":t.fwd; r.b.textContent = t.r==="pending"?"":t.rev; r.i.textContent = t.r==="pending"?"":fmt(t.i,2); r.note.textContent=t.note;
     const d=S.duty[m]||0; const di=r.duty.firstChild; di.style.left=(d>=0?50:50+d*50)+"%"; di.style.width=Math.abs(d)*50+"%";
@@ -545,6 +549,7 @@ function buildCalib(){
     cmd({cmd:"set_cpu",joint:4,value:cpu},`Roll set to ${fmt(cpu,2)} counts/°`).then(loadConfig);
     $("#rollDone").disabled=true; $("#rollInfo").textContent=`${fmt(cpu,2)} counts per degree`; rollStartCounts=null;
   };
+  drawHand();
   const at=$("#adjTable tbody");
   for(let j=0;j<6;j++){
     const r={pos:el("td",{class:"num"}), cpu:el("input",{type:"number",step:"0.1",style:"width:90px"})};
@@ -560,7 +565,78 @@ async function runJob(kind, j){
   if(!S.enabled){ const r=await cmd({cmd:"enable"}); if(!r.ok) return; }
   cmd({cmd:kind, joint:j});
 }
+// Hand calibration wizard. Per joint: check direction, mark one end, mark the
+// other end (passing the home switch), finish. Then the motor direction test.
+const HAND_TIPS = [
+  ["Turn the base fully counter-clockwise (seen from above) until it stops.", "Now turn it all the way clockwise until it stops, passing the home switch on the way."],
+  ["Push the shoulder all the way back until it stops.", "Now bring it all the way forward until it stops, passing the home switch."],
+  ["Fold the elbow fully up until it stops.", "Now swing it fully down until it stops, passing the home switch."],
+  ["Tilt the wrist fully up until it stops.", "Now tilt it fully down until it stops, passing the home switch."],
+  ["Put a pencil mark on the gripper and the wrist so they line up.", "Turn the gripper exactly one full turn (either way) until the marks line up again. It must pass the home switch."],
+  ["Close the gripper fully by hand.", "Now open it fully."],
+];
+const hw = {j:0, step:"start", result:null};
+function handGo(step){ hw.step=step; drawHand(); }
+async function handNext(){ hw.result=null; if(++hw.j>=6){ hw.j=0; handGo("motors"); } else handGo("dir"); }
+function drawHand(){
+  const box=$("#handWiz"); if(!box) return; box.replaceChildren();
+  const j=hw.j, name=JN[j], live=el("div",{class:"row",id:"handLive",style:"margin:6px 0"});
+  const steps=["dir","end0","end1"];
+  const head=()=>el("div",{style:"font-weight:600"},`${name} (${j+1} of 6)`+(steps.includes(hw.step)?` · step ${steps.indexOf(hw.step)+1} of 3`:""));
+  const skip=el("button",{class:"small",onclick:handNext},"Skip this joint");
+  if(hw.step==="start"){
+    box.append(el("div",{class:"row"},
+      el("button",{class:"primary",onclick:async()=>{ if(S&&S.enabled){ const r=await cmd({cmd:"disable"}); if(!r.ok) return; } hw.j=0; handGo("dir"); }},"Start (turns the motors off)"),
+      el("span",{class:"muted"},"Joints with a good calibration can be skipped.")));
+  } else if(hw.step==="dir"){
+    box.append(head(), el("p",{},`Move the ${name.toLowerCase()} a little each way by hand and watch the 3D view. Does the model move the same way?`), live,
+      el("div",{class:"row"},
+        el("button",{class:"primary",onclick:async()=>{ const r=await cmd({cmd:"hand_begin",joint:j}); if(r.ok) handGo("end0"); }},"Yes, same way"),
+        el("button",{onclick:async()=>{ const r=await cmd({cmd:"invert_joint",joint:j},`Reversed ${name}: check again`); if(r.ok) loadConfig(); }},"No, it's backwards"),
+        j===4?el("span",{class:"muted"},"If pitch was right but roll is backwards, reversing here is fine."):"", skip));
+  } else if(hw.step==="end0"||hw.step==="end1"){
+    const e=hw.step==="end0"?0:1;
+    box.append(head(), el("p",{},HAND_TIPS[j][e]), live,
+      el("div",{class:"row"},
+        el("button",{class:"primary",onclick:async()=>{
+          const r=await cmd({cmd:"hand_mark",joint:j,end:e}); if(!r.ok) return;
+          if(!e) return handGo("end1");
+          const f=await cmd({cmd:"hand_finish",joint:j}); hw.result=f;
+          if(f.ok){ loadConfig(); handGo("result"); } }},e?"Mark this end and finish":"Mark this end"),
+        e?el("button",{class:"small",onclick:async()=>{ const r=await cmd({cmd:"hand_begin",joint:j}); if(r.ok) handGo("end0"); }},"Start this joint over"):"", skip));
+  } else if(hw.step==="result"){
+    const f=hw.result||{};
+    box.append(head(), el("p",{},`✓ ${f.note||"done"}. Soft limits ${fmt(f.smin,0)} … ${fmt(f.smax,0)}${JU[j]}. Saved.`), live,
+      el("div",{class:"row"}, el("button",{class:"primary",onclick:handNext},j<5?"Next joint":"Next: motor directions"),
+        el("button",{onclick:async()=>{ const r=await cmd({cmd:"hand_begin",joint:j}); if(r.ok) handGo("end0"); }},"Redo this joint")));
+  } else if(hw.step==="motors"){
+    box.append(el("div",{style:"font-weight:600"},"Motor directions"),
+      el("p",{},"The arm enables and pulses each motor briefly forward and back to check it turns the way its encoder expects. Keep clear of the arm. A motor marked backwards can be fixed with Flip. Then nudge each joint and check the real arm moves the same way as the model."),
+      el("div",{class:"row"}, el("button",{class:"primary",onclick:()=>runJob("self_test",-1)},"Run direction test"),
+        el("button",{class:"small",onclick:()=>{ hw.j=0; handGo("start"); }},"Back to the start")));
+    const t=el("table",{id:"handMotors"}); t.append(el("tr",{}, el("th",{},"Motor"), el("th",{},"Result"), el("th",{},"Note"), el("th",{},"")));
+    MN.forEach((n,m)=>t.append(el("tr",{}, el("td",{},n), el("td",{},el("span",{class:"badge"},"—")), el("td",{class:"muted"}),
+      el("td",{},el("button",{class:"small",onclick:()=>cmd({cmd:"flip_motor",motor:m},`Flipped ${n}: run the test again`).then(loadConfig)},"Flip")))));
+    const nudge=el("div",{class:"row",style:"margin-top:8px"}, el("span",{class:"muted"},"Nudge +5:"));
+    JN.forEach((n,jj)=>nudge.append(el("button",{class:"small",onclick:async()=>{
+      if(!S.enabled){ const r=await cmd({cmd:"enable"}); if(!r.ok) return; }
+      const p=[null,null,null,null,null,null]; p[jj]=S.pos[jj]+5; cmd({cmd:"move",pos:p,speed:0.3}); }},n)));
+    box.append(el("div",{class:"scroll"},t), nudge,
+      el("p",{class:"muted"},"If wrist pitch moves right but roll goes the wrong way (or the reverse), the two wrist motor cables (M4 and M5) are swapped."));
+  }
+  renderHand();
+}
+function renderHand(){
+  const live=$("#handLive");
+  if(live && S){ const j=hw.j;
+    live.replaceChildren(el("span",{class:"pill"},`${fmt(S.pos[j],1)}${JU[j]}`),
+      j<5?el("span",{class:"pill "+(S.sw[j]?"ok":"")},S.sw[j]?"home switch: pressed":"home switch: open"):"",
+      S.enabled?el("span",{class:"pill warn"},"motors are on: disable them to move the arm by hand"):""); }
+  const t=$("#handMotors");
+  if(t && S) S.mtest.forEach((r,m)=>{ const row=t.rows[m+1]; setBadge(row.cells[1].firstChild, r.r); row.cells[2].textContent=r.note||""; });
+}
 function renderCalib(){
+  renderHand();
   for(let j=0;j<6;j++){
     const c=S.cal[j], r=calRows[j]; if(!r) continue;
     setBadge(r.res, c.r);
@@ -582,8 +658,8 @@ function renderCalib(){
 // settings tab
 // ---------------------------------------------------------------------------
 const JCOLS=[["counts_per_unit","counts/unit",0.1],["home_pos","home at",0.1],["soft_min","soft min",1],["soft_max","soft max",1],["vmax","max speed /s",1],["amax","accel /s²",10],["home_speed","home speed /s",0.5],["follow_err","follow err",0.5],["stall_ms","stall ms",10],["home_dir","home dir (±1)",2]];
-const MCOLS=[["kp","kp",0.0005],["ki","ki",0.0001],["kd","kd",0.00001],["i_zone","i zone",10],["min_duty","min duty",0.05],["max_duty","max duty",0.05],["motor_dir","motor dir",2],["enc_dir","enc dir",2]];
-const GCOLS=[["current_limit_a","current trip (A)",0.1],["calib_duty","calibration duty cap",0.05],["test_duty","motor test duty",0.05],["test_ms","motor test pulse (ms)",50],["gripper_open_mm","gripper open after home (mm)",1],["jog_timeout_ms","jog timeout (ms)",50],["roll_ratio","roll ratio",0.01]];
+const MCOLS=[["kp","kp",0.0005],["ki","ki",0.0001],["kd","kd",0.00001],["i_zone","i zone",10],["min_duty","min duty",0.05],["max_duty","max duty",0.05],["trip_a","current trip (A)",0.1],["motor_dir","motor dir",2],["enc_dir","enc dir",2]];
+const GCOLS=[["trip_ms","over-current time (ms)",100],["calib_duty","calibration duty cap",0.05],["test_duty","motor test duty",0.05],["test_ms","motor test pulse (ms)",50],["gripper_open_mm","gripper open after home (mm)",1],["jog_timeout_ms","jog timeout (ms)",50],["roll_ratio","roll ratio",0.01]];
 function cfgTable(id, cols, rows, names){
   const t=$(id); t.replaceChildren();
   t.append(el("tr",{}, el("th",{},""), ...cols.map(c=>el("th",{class:"num"},c[1]))));
@@ -785,9 +861,9 @@ const viewer = {
 // ---------------------------------------------------------------------------
 class MockRobot {
   constructor(){
-    this.cfg = {current_limit_a:2.5,calib_duty:0.6,test_duty:0.7,test_ms:300,gripper_open_mm:40,jog_timeout_ms:300,roll_ratio:1,home_order:[1,2,3,4,5,0],
+    this.cfg = {trip_ms:1000,calib_duty:0.6,test_duty:0.7,test_ms:300,gripper_open_mm:40,jog_timeout_ms:300,roll_ratio:1,home_order:[1,2,3,4,5,0],
       joints:[["base",-155,155,140],["shoulder",-35,130,140],["elbow",-130,130,140],["pitch",-130,130,75],["roll",-570,570,75],["gripper",0,75,100]].map(([name,lo,hi,cpu],i)=>({name,has_switch:i<5,home_dir:-1,spec_min:lo,spec_max:hi,continuous:i===4,counts_per_unit:cpu,cpu_calibrated:false,home_pos:0,soft_min:lo+2,soft_max:hi-2,vmax:[40,30,30,60,90,20][i],amax:180,home_speed:8,follow_err:8,stall_ms:150})),
-      motors:[0,1,2,3,4,5].map(()=>({motor_dir:1,enc_dir:1,kp:0.004,ki:0.0008,kd:0.00002,i_zone:300,min_duty:0.3,max_duty:1}))};
+      motors:[0,1,2,3,4,5].map(()=>({motor_dir:1,enc_dir:1,kp:0.004,ki:0.0008,kd:0.00002,i_zone:300,min_duty:0.3,max_duty:1,trip_a:2.9}))};
     this.pos=[25,55,-35,-20,0,30]; this.tgt=this.pos.slice(); this.vel=[0,0,0,0,0,0]; this.jogUntil=[0,0,0,0,0,0];
     this.homed=[false,false,false,false,false,false]; this.mode="disabled"; this.enabled=false; this.fault=""; this.phase=""; this.busy=-1;
     this.jobs=[]; this.mtest=[0,1,2,3,4,5].map(()=>({r:"pending",fwd:0,rev:0,i:null,note:""}));
@@ -802,7 +878,7 @@ class MockRobot {
     const busy=["homing","calibrating","test"].includes(this.mode);
     const needEnabled=()=>!this.enabled?no("not enabled"):busy?no("busy ("+this.mode+")"):null;
     switch(m.cmd){
-      case "enable": if(this.mode==="fault") return no("clear the fault first"); this.enabled=true; this.mode="idle"; this.tgt=this.pos.slice(); return ok;
+      case "enable": this.fault=""; this.enabled=true; this.mode="idle"; this.tgt=this.pos.slice(); return ok;
       case "disable": this.enabled=false; this.mode="disabled"; this.jobs=[]; this.phase=""; this.busy=-1; this.vel.fill(0); return ok;
       case "stop": this.jobs=[]; this.phase=""; this.busy=-1; this.vel.fill(0); this.tgt=this.pos.slice(); if(this.enabled) this.mode="idle"; return ok;
       case "reset": this.mode="disabled"; this.fault=""; return ok;
@@ -818,6 +894,16 @@ class MockRobot {
       case "invert_joint": this.cfg.motors[m.joint].enc_dir*=-1; this.homed[m.joint]=false; return ok;
       case "zero_here": this.homed[m.joint]=true; return ok;
       case "set_cpu": this.cfg.joints[m.joint].counts_per_unit=m.value; this.cfg.joints[m.joint].cpu_calibrated=true; return ok;
+      case "hand_begin": if(this.enabled) return no("disable the motors first"); this.hand={j:m.joint,has:[false,false]}; this.cal[m.joint]={r:"pending",note:""}; return ok;
+      case "hand_mark": { const h=this.hand; if(!h||h.j!==m.joint) return no("start hand calibration of that joint first"); const jc=this.cfg.joints[h.j];
+        // demo: there are no hands, so jump the joint to the end it is asked for
+        this.pos[h.j] = jc.continuous ? this.pos[h.j]+(m.end?360:0) : (m.end?jc.spec_max:jc.spec_min); this.tgt=this.pos.slice(); h.has[m.end]=true; return ok; }
+      case "hand_finish": { const h=this.hand; if(!h||h.j!==m.joint||!h.has[0]||!h.has[1]) return no("mark both ends first"); const j=h.j, jc=this.cfg.joints[j];
+        const cpu=+(jc.counts_per_unit*(0.95+Math.random()*0.1)).toFixed(2), home=j===5?0:+(jc.continuous?jc.home_pos:this.switchAt[j]-1).toFixed(2);
+        const smin=jc.continuous?jc.soft_min:jc.spec_min+(j===5?1:3), smax=jc.continuous?jc.soft_max:jc.spec_max-(j===5?1:3), unit=j===5?"mm":"deg";
+        const note=j===5?`${cpu} counts/${unit}`:`${cpu} counts/${unit}, switch at ${home} ${unit}`;
+        this.cal[j]={r:"pass",min:0,max:0,cpu,home,smin,smax,note}; Object.assign(jc,{counts_per_unit:cpu,cpu_calibrated:true,home_pos:home,soft_min:smin,soft_max:smax});
+        this.homed[j]=true; this.hand=null; return {ok:true,note,cpu,home,smin,smax}; }
       case "reset_switch_test": this.swOn.fill(false); this.swOff.fill(false); return ok;
       case "reset_encoder_test": this.emin=this.emax=null; return ok;
       case "defaults": return ok;
@@ -880,7 +966,6 @@ document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
 $("#enableBtn").onclick = ()=>cmd({cmd: S&&S.enabled?"disable":"enable"});
 $("#stopBtn").onclick = ()=>cmd({cmd:"stop"},"Stopped");
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") cmd({cmd:"stop"},"Stopped"); });
-$("#resetBtn").onclick = ()=>cmd({cmd:"reset"},"Fault cleared: Enable to continue");
 $("#homeAllBtn").onclick = ()=>runJob("home",-1);
 $("#goZeroBtn").onclick = ()=>cmd({cmd:"move",pos:[0,0,0,0,null,null],speed:speedFrac()});
 $("#gripOpenBtn").onclick = ()=>moveJoint(5, (CFG&&CFG.gripper_open_mm)||40);

@@ -132,9 +132,9 @@ async def main():
             check("E-STOP" in await page.inner_text("#faultBar"), "E-stop banner appears when motor power drops")
             await page.screenshot(path=os.path.join(OUT, "estop.png"))
             post("/api/sim", {"vm": True})
-            await page.click("#resetBtn")
+            await page.click("#enableBtn")
             await page.wait_for_selector("#faultBar", state="hidden", timeout=3000)
-            check(True, "Clear fault removes the banner")
+            check(True, "Enable clears the E-stop banner")
 
             print("settings")
             await page.click("#tabs [data-tab=settings]")
