@@ -57,7 +57,7 @@ struct MotorConfig {
 struct JointConfig {
   char name[12] = "";
   bool has_switch = true;
-  int8_t home_dir = -1;     // direction to seek the home switch from the far side
+  int8_t home_dir = -1;     // direction to seek the switch first, and to creep across it to the zero edge
   float spec_min = -180.f;  // degrees (mm for the gripper) from the manual
   float spec_max = 180.f;
   bool continuous = false;  // wrist roll: no hard stops

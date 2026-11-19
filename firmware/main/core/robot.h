@@ -105,7 +105,7 @@ class Robot {
   enum class Phase : uint8_t {
     kNone,
     // homing
-    kHomeLeaveSwitch, kHomeSeek, kHomePass, kHomeSettle, kHomeGripClose, kHomeGripOpen,
+    kHomeSeek, kHomePass, kHomeSettle, kHomeGripClose, kHomeGripOpen,
     // calibration
     kCalHome, kCalToMin, kCalToMax, kCalReturn,
     // motor test
