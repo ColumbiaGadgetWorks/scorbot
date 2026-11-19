@@ -51,15 +51,18 @@ const char* ResultName(Result r) {
 }
 
 // ---------------------------------------------------------------------------
-// Mapping. Motors 3 and 4 (0-based) drive the differential wrist:
-// pitch = (m3 + m4) / 2, roll = (m3 - m4) / 2.
+// Mapping. Motors 3 and 4 (0-based) drive the bevel-gear differential wrist.
+// ER-4u manual, ch. 2: motors 4 and 5 turning opposite ways pitch the wrist,
+// the same way rolls it (checked by hand on a real arm: a pitch nod moved the
+// two encoders in opposite directions, a roll twist moved both the same way).
+// pitch = (m3 - m4) / 2, roll = (m3 + m4) / 2.
 // ---------------------------------------------------------------------------
 void Robot::motorsToJoints(const float* m, float* j) const {
   j[kBase] = m[0];
   j[kShoulder] = m[1];
   j[kElbow] = m[2];
-  j[kPitch] = 0.5f * (m[3] + m[4]);
-  j[kRoll] = 0.5f * (m[3] - m[4]);
+  j[kPitch] = 0.5f * (m[3] - m[4]);
+  j[kRoll] = 0.5f * (m[3] + m[4]);
   j[kGripper] = m[5];
 }
 
@@ -67,8 +70,8 @@ void Robot::jointsToMotors(const float* j, float* m) const {
   m[0] = j[kBase];
   m[1] = j[kShoulder];
   m[2] = j[kElbow];
-  m[3] = j[kPitch] + j[kRoll];
-  m[4] = j[kPitch] - j[kRoll];
+  m[3] = j[kRoll] + j[kPitch];
+  m[4] = j[kRoll] - j[kPitch];
   m[5] = j[kGripper];
 }
 
@@ -489,8 +492,11 @@ void Robot::startJoint(int j) {
     setPhase(Phase::kHomeGripClose, "closing to stop");
     return;
   }
+  // Already on the switch: creep straight to its edge. (Backing off first can
+  // drive into a hard stop: the ER-4u shoulder switch stays pressed right up
+  // to its stop.)
   if (j < kSwitches && st_.sw[j])
-    setPhase(Phase::kHomeLeaveSwitch, "leaving switch");
+    setPhase(Phase::kHomePass, "finding switch edge");
   else
     setPhase(Phase::kHomeSeek, "seeking switch");
   latch_ = 0;  // used as "already reversed" flag during seek
@@ -573,22 +579,12 @@ void Robot::runJob(float dt) {
   const bool on = j < kSwitches ? st_.sw[j] : false;
 
   switch (phase_) {
-    case Phase::kHomeLeaveSwitch:
-      jvel_[j] = -jc.home_dir * seek;
-      if (on) phase_t_ = 0;  // need 0.3 s clear of the switch
-      if (phase_t_ > 0.3f) {
-        seek_start_ = jointCounts(j);
-        setPhase(Phase::kHomeSeek, "seeking switch");
-      }
-      if (blocked(j, dt)) {
-        fault("homing: stuck while leaving the switch");
-      }
-      break;
     case Phase::kHomeSeek: {
       jvel_[j] = (latch_ != 0 ? -jc.home_dir : jc.home_dir) * seek;
       // Continuous joints (roll) have no stops: give up on a direction after 1.5 turns (counts/deg may still be an estimate).
       const bool too_far = jc.continuous && std::fabs(jointCounts(j) - seek_start_) > 540.f * cpu;
       if (on) {
+        holdHere();  // start the creep from here, not from a target that ran ahead
         setPhase(Phase::kHomePass, "finding switch edge");
       } else if (blocked(j, dt) || too_far) {
         if (latch_ == 0) {  // hit a stop without seeing the switch: search the other way once
@@ -605,10 +601,14 @@ void Robot::runJob(float dt) {
       break;
     }
     case Phase::kHomePass: {
-      const float dir = Sign(jvel_[j]) != 0 ? Sign(jvel_[j]) : jc.home_dir;
-      jvel_[j] = dir * seek * 0.3f;  // creep across the switch
+      // Always creep in home_dir, even if the search found the switch while
+      // moving the other way (after reversing at a stop): the edge is then
+      // the same one, reached from the same side, every time. Creeping on in
+      // the reversed direction can run into a stop with the switch still
+      // pressed, as on the ER-4u shoulder.
+      jvel_[j] = jc.home_dir * seek * 0.3f;
       if (!on) {
-        // Far edge of the switch, approached the same way every time.
+        // home_dir-side edge of the switch, approached the same way every time.
         zero_[j] = jointCounts(j);
         st_.homed[j] = true;
         if (job_is_calib_) calib_[j].home_counts = static_cast<int32_t>(zero_[j]);
@@ -757,7 +757,8 @@ void Robot::invertJoint(int j) {
   if (j < 0 || j >= kJoints) return;
   int ms[2] = {j, -1};
   if (j == kPitch || j == kRoll) {
-    // Inverting a wrist joint swaps the two wrist motors' roles; flip both encoders and drives.
+    // Both wrist motors carry pitch and roll, so flip both encoders and drives
+    // (this reverses pitch and roll together).
     ms[0] = 3;
     ms[1] = 4;
   }
@@ -766,6 +767,9 @@ void Robot::invertJoint(int j) {
     cfg_.motor[m].enc_dir = -cfg_.motor[m].enc_dir;
     cfg_.motor[m].motor_dir = -cfg_.motor[m].motor_dir;
   }
+  // Same physical homing direction in the new joint sign.
+  cfg_.joint[j].home_dir = -cfg_.joint[j].home_dir;
+  if (j == kPitch || j == kRoll) cfg_.joint[j == kPitch ? kRoll : kPitch].home_dir *= -1;
   st_.homed[j] = false;
   if (j == kPitch || j == kRoll) st_.homed[kPitch] = st_.homed[kRoll] = false;
 }

@@ -210,7 +210,10 @@ int32_t Esp32Hal::encoder(int m) {
 void Esp32Hal::setMotor(int m, float duty) {
   const uint8_t bit = 1u << m;
   uint8_t want = ph_want_.load();
-  want = duty >= 0 ? (want | bit) : (want & ~bit);
+  // PH low for +duty: with PH high for +duty, every ER-4u motor drove against
+  // its encoder (self-test: all six "disagree"), so closed loop ran away.
+  const bool ph = board::kPhHighForward ? duty >= 0 : duty < 0;
+  want = ph ? (want | bit) : (want & ~bit);
   ph_want_ = want;
   // Hold EN low until the expander has actually switched PH for this motor.
   if (((ph_applied_.load() ^ want) & bit) || !tca_ok_) duty = 0;

@@ -1,7 +1,9 @@
 // Runs the real robot core + JSON API against SimArm in real time.
 // stdin:  one JSON command per line ({"cmd":...,"id":N}); "__get_config" /
 //         "__set_config" read and write the config like /api/config.
-// stdout: "S <state json>" every 50 ms, "R <reply json>" per command.
+// stdout: every 50 ms "S <state json>" (for /api/state) and "L <hex wire::Live>"
+//         (the binary /ws frame); "I <info json>" when it changes; "R <reply json>"
+//         per command.
 // Used by sim_bridge.py to serve the web UI without hardware.
 #include <poll.h>
 #include <unistd.h>
@@ -30,7 +32,7 @@ int main() {
   std::snprintf(hw.ssid, sizeof(hw.ssid), "simulator");
   setvbuf(stdout, nullptr, _IOLBF, 0);
 
-  std::string line;
+  std::string line, last_info;
   auto next = std::chrono::steady_clock::now();
   for (uint32_t frame = 0;; ++frame) {
     for (int i = 0; i < 50; ++i) {  // 50 ms of 1 kHz control
@@ -76,6 +78,27 @@ int main() {
     std::printf("S %s\n", s);
     cJSON_free(s);
     cJSON_Delete(st);
+    wire::Live live;
+    api::FillLive(robot, cfg, hw, &live);
+    std::string hex;
+    hex.reserve(2 * sizeof(live));
+    for (size_t i = 0; i < sizeof(live); ++i) {
+      static const char* d = "0123456789abcdef";
+      const uint8_t b = reinterpret_cast<const uint8_t*>(&live)[i];
+      hex += d[b >> 4];
+      hex += d[b & 15];
+    }
+    std::printf("L %s\n", hex.c_str());
+    InfoSnapshot snap;
+    api::Snapshot(robot, &snap);
+    cJSON* info = api::Info(snap, hw);
+    char* is = cJSON_PrintUnformatted(info);
+    if (last_info != is) {
+      last_info = is;
+      std::printf("I %s\n", is);
+    }
+    cJSON_free(is);
+    cJSON_Delete(info);
     next += std::chrono::milliseconds(50);
     std::this_thread::sleep_until(next);
   }

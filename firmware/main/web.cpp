@@ -1,5 +1,6 @@
 #include "web.h"
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -264,31 +265,66 @@ esp_err_t NotFound(httpd_req_t* req, httpd_err_code_t) {
   return httpd_resp_send(req, nullptr, 0);
 }
 
+// /ws push: a binary wire::Live frame at 20 Hz, plus the slow-changing
+// {"t":"info"} JSON only when it changes (or a client has just connected).
+// Under the lock we only copy plain structs; JSON is built after releasing it,
+// so the 1 kHz control loop never waits on cJSON.
 void Broadcaster(void*) {
+  static wire::Live live;
+  static InfoSnapshot snap;
+  std::string last_info;
+  int known[8] = {}, n_known = 0;
+  uint8_t last_mode = 0xff;
+  int8_t last_busy = -2;
   TickType_t last = xTaskGetTickCount();
-  for (;;) {
+  for (uint32_t tick = 0;; ++tick) {
     vTaskDelayUntil(&last, pdMS_TO_TICKS(50));  // 20 Hz
     size_t n = 8;
-    int fds[8];
+    int fds[8], ws[8], n_ws = 0;
     if (httpd_get_client_list(g_server, &n, fds) != ESP_OK) continue;
-    bool any = false;
-    for (size_t i = 0; i < n; ++i) any |= httpd_ws_get_fd_info(g_server, fds[i]) == HTTPD_WS_CLIENT_WEBSOCKET;
-    if (!any) continue;
-    cJSON* j;
-    {
-      HwInfo hw = Hw();
-      Locked l;
-      j = api::State(*g_app->robot, *g_app->cfg, hw);
+    bool new_client = false;
+    for (size_t i = 0; i < n; ++i) {
+      if (httpd_ws_get_fd_info(g_server, fds[i]) != HTTPD_WS_CLIENT_WEBSOCKET) continue;
+      ws[n_ws++] = fds[i];
+      new_client |= std::find(known, known + n_known, fds[i]) == known + n_known;
     }
+    std::copy(ws, ws + n_ws, known);
+    n_known = n_ws;
+    if (n_ws == 0) {
+      last_info.clear();
+      continue;
+    }
+    const HwInfo hw = Hw();
+    bool info_due = new_client || tick % 10 == 0;  // re-check the info at 2 Hz
+    {
+      Locked l;
+      api::FillLive(*g_app->robot, *g_app->cfg, hw, &live);
+      // a job step finished or the mode changed: results may be new, send them now
+      info_due |= live.mode != last_mode || live.busy != last_busy;
+      if (info_due) api::Snapshot(*g_app->robot, &snap);
+    }
+    last_mode = live.mode;
+    last_busy = live.busy;
+
+    httpd_ws_frame_t f = {};
+    f.type = HTTPD_WS_TYPE_BINARY;
+    f.payload = reinterpret_cast<uint8_t*>(&live);
+    f.len = sizeof(live);
+    for (int i = 0; i < n_ws; ++i) httpd_ws_send_frame_async(g_server, ws[i], &f);
+
+    if (!info_due) continue;
+    cJSON* j = api::Info(snap, hw);
     char* s = cJSON_PrintUnformatted(j);
     cJSON_Delete(j);
     if (!s) continue;
-    httpd_ws_frame_t f = {};
-    f.type = HTTPD_WS_TYPE_TEXT;
-    f.payload = reinterpret_cast<uint8_t*>(s);
-    f.len = std::strlen(s);
-    for (size_t i = 0; i < n; ++i)
-      if (httpd_ws_get_fd_info(g_server, fds[i]) == HTTPD_WS_CLIENT_WEBSOCKET) httpd_ws_send_frame_async(g_server, fds[i], &f);
+    if (new_client || last_info != s) {
+      last_info = s;
+      httpd_ws_frame_t t = {};
+      t.type = HTTPD_WS_TYPE_TEXT;
+      t.payload = reinterpret_cast<uint8_t*>(s);
+      t.len = std::strlen(s);
+      for (int i = 0; i < n_ws; ++i) httpd_ws_send_frame_async(g_server, ws[i], &t);
+    }
     cJSON_free(s);
   }
 }

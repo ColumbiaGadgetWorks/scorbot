@@ -94,6 +94,11 @@ async def main():
             s = await wait_for(lambda s: s["mode"] != "test" and all(t["r"] != "pending" for t in s["mtest"]), 20)
             results = [t["r"] for t in s["mtest"]]
             check(results == ["pass"] * 6, f"self-test passes all motors {results}")
+            # results reach the page in a separate {"t":"info"} message: allow a frame or two
+            try:
+                await page.wait_for_function("document.querySelectorAll('#motorTable .badge.pass').length === 6", timeout=2000)
+            except Exception:
+                pass
             badges = await page.locator("#motorTable .badge.pass").count()
             check(badges == 6, f"6 pass badges shown ({badges})")
             await page.locator("#motorTable tbody tr").nth(2).locator("button", has_text="Flip").click()

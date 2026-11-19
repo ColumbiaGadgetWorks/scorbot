@@ -93,6 +93,28 @@ static void TestHomeFromOnSwitch() {
   CHECK(r.robot.status().homed[kElbow], "elbow not homed, fault '%s'", r.robot.status().fault);
 }
 
+// Like the real ER-4u shoulder: the switch sits against a hard stop, so it is
+// still pressed at the stop and can only be released by moving away from it.
+static void TestHomeSwitchAtHardStop() {
+  for (int on_switch = 0; on_switch < 2; ++on_switch) {
+    std::printf("home: switch pressed up to the hard stop (%s)\n", on_switch ? "starting on it" : "starting below it");
+    Rig r;
+    r.sim.switch_at[kShoulder] = 129.5f;  // pressed from 128.5 deg to past the 130 deg stop
+    float jc[kJoints];
+    SimArm::ToJoints(r.sim.mcount, jc);
+    jc[kShoulder] = (on_switch ? 129.8f : 60.f) * r.sim.true_cpu[kShoulder];
+    SimArm::ToMotors(jc, r.sim.mcount);
+    r.run(0.05f);
+    CHECK(r.robot.status().sw[kShoulder] == (on_switch != 0), "switch state at start");
+    r.robot.enable();
+    r.robot.home(kShoulder);
+    CHECK(r.run(120.f, [&] { return r.robot.status().mode != Mode::kHoming; }), "timeout");
+    CHECK(r.robot.status().homed[kShoulder], "shoulder not homed, fault '%s'", r.robot.status().fault);
+    // zero is the switch edge reached creeping in home_dir (-1): its low edge
+    CHECK(std::fabs(r.sim.jointDeg(kShoulder) - 128.5f) < 0.5f, "homed at %.2f deg", r.sim.jointDeg(kShoulder));
+  }
+}
+
 static void TestCalibrate() {
   std::puts("calibrate: travel span gives counts/deg");
   Rig r;
@@ -239,7 +261,7 @@ static void TestOverCurrent() {
 }
 
 static void TestDifferentialWrist() {
-  std::puts("wrist: pitch-only move drives both wrist motors the same way");
+  std::puts("wrist: pitch-only move drives the two wrist motors opposite ways");
   Rig r;
   r.run(0.05f);
   r.robot.enable();
@@ -251,13 +273,14 @@ static void TestDifferentialWrist() {
   r.robot.moveTo(tgt, use, 1.f);
   r.run(10.f, [&] { return r.idle(); });
   const int32_t da = r.robot.status().counts[3] - a0, db = r.robot.status().counts[4] - b0;
-  CHECK(da > 100 && db > 100 && std::abs(da - db) < 30, "da %d db %d", da, db);
+  CHECK(da > 100 && db < -100 && std::abs(da + db) < 30, "da %d db %d", da, db);
 }
 
 int main() {
   TestEnableAndMove();
   TestHomeAll();
   TestHomeFromOnSwitch();
+  TestHomeSwitchAtHardStop();
   TestCalibrate();
   TestCalibrateGripper();
   TestMotorTestFindsReversedMotor();

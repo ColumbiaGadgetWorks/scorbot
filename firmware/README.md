@@ -15,7 +15,8 @@ The `control` task runs on core 1 at 1 kHz. It does the following:
   "Motor driver carriers" in `idf.py menuconfig` (Scorbot menu): #4035
   DRV8874 (1.12 V/A, about 2.9 A) or #4036 DRV8876 (2.49 V/A, 1.33 A limit,
   1.2 A trip).
-- Handles the wrist as a differential pair: pitch = (m4+m5)/2, roll = (m4-m5)/2.
+- Handles the wrist as a bevel-gear differential: pitch = (m4-m5)/2, roll = (m4+m5)/2
+  (motors 4 and 5 turning opposite ways pitch the wrist, the same way roll it).
 
 The `io` task runs on core 0 at 500 Hz. It reads these over I2C:
 - TCA9555 (0x20): home switches, DRV nFAULT, VM sense, PH lines.
@@ -85,13 +86,25 @@ API: `GET /api/ota` (status), `POST /api/ota/check`, `POST /api/ota/install`,
 
 | Endpoint | |
 |---|---|
-| `GET /api/state` | Live state JSON. The same JSON is pushed on `/ws` at 20 Hz. |
+| `GET /api/state` | Full state as JSON (for scripts; the web UI uses `/ws`). |
+| `/ws` | WebSocket. Pushes the live state as a binary frame at 20 Hz, plus `{"t":"info"}` JSON (test and calibration results, hardware) when it changes. Takes commands as JSON text. |
 | `POST /api/cmd` | `{"cmd": ...}` (see below). WebSocket messages take the same form, plus an optional `id`. |
 | `GET/POST /api/config` | Joint/motor configuration. A POST may be a partial update and is saved to NVS. |
 | `GET/POST /api/wifi` | WiFi, hostname and API key. A POST saves and reboots. |
 | `POST /api/reboot` | Reboots the controller. |
 
 If an API key is set, send it as the `X-API-Key` header, or as `"key"` in WebSocket messages.
+
+The binary live frame is `wire::Live` in `main/api.h`: 284 bytes, little-endian,
+every array 4-byte aligned, so the page reads it in place with typed-array views
+(`decodeLive()` in `web/index.html`). It starts with the magic `0x5342` and a
+version byte; the page ignores frames with another version and asks for a
+reload. If you change the layout, bump `wire::kVersion` and update
+`decodeLive()` and `test/check_wire.py`.
+
+The page sends at most one message per command and joint (or motor) every
+50 ms and keeps only the newest. `stop`, `disable` and a jog at speed 0 go out
+immediately and cancel any queued motion.
 
 Commands for `POST /api/cmd`:
 - `enable`, `disable`, `stop`, `reset`
@@ -116,6 +129,8 @@ make -C test sim_server CJSON=/tmp/cJSON
 pip install aiohttp playwright
 python3 test/sim_bridge.py 8080                   # real UI + real core on the sim -> http://localhost:8080
 python3 test/ui_test.py                           # end-to-end browser test
+python3 test/check_wire.py                        # binary /ws frame: C++ layout and page decoder vs JSON
+node test/check_throttle.js                       # the page's outgoing-command throttle
 ```
 
 To try the UI on its own, open `web/index.html?demo`. It also opens directly from disk, and in that case runs a built-in mock arm.
