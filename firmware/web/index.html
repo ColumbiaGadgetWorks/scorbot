@@ -268,8 +268,14 @@ function toast(msg, ms=2600){ const t=$("#toast"); t.textContent=msg; t.classLis
 // ---------------------------------------------------------------------------
 // connection: WebSocket for state + commands, REST for config
 // ---------------------------------------------------------------------------
+// Outgoing commands are throttled to one per command+joint/motor every
+// SEND_GAP_MS, keeping only the newest (so a burst can't flood the
+// controller, and the last value always arrives). Anything that stops motion
+// (stop, disable, jog at speed 0) goes out at once and drops queued motion.
+const SEND_GAP_MS = 50;
+const isHalt = m => m.cmd==="stop" || m.cmd==="disable" || (m.cmd==="jog" && !m.speed);
 const Conn = {
-  ws:null, id:1, pending:new Map(), up:false,
+  ws:null, id:1, pending:new Map(), up:false, lastSent:new Map(), queued:new Map(),
   key(){ try{ return localStorage.getItem("scorbot.key")||""; }catch(e){ return ""; } },
   start(){
     const q = new URLSearchParams(location.search);
@@ -287,6 +293,22 @@ const Conn = {
   },
   send(msg){
     if (demo) return Promise.resolve(demo.handle(msg));
+    const key = msg.cmd+":"+(msg.joint??"")+":"+(msg.motor??"");
+    if (isHalt(msg)) {  // never delayed; cancel queued motion it would otherwise be followed by
+      for (const [k,q] of this.queued) if (msg.cmd!=="jog" || k===key) { clearTimeout(q.timer); q.res({ok:true, superseded:true}); this.queued.delete(k); }
+      this.lastSent.set(key, performance.now());
+      return this.sendNow(msg);
+    }
+    const q = this.queued.get(key);
+    if (q) { q.res({ok:true, superseded:true}); q.msg = msg; return new Promise(res => { q.res = res; }); }
+    const wait = (this.lastSent.get(key) ?? -Infinity) + SEND_GAP_MS - performance.now();
+    if (wait <= 0) { this.lastSent.set(key, performance.now()); return this.sendNow(msg); }
+    return new Promise(res => {
+      const e = {msg, res, timer:setTimeout(() => { this.queued.delete(key); this.lastSent.set(key, performance.now()); this.sendNow(e.msg).then(r => e.res(r)); }, wait)};
+      this.queued.set(key, e);
+    });
+  },
+  sendNow(msg){
     return new Promise(res => {
       if (!this.ws || this.ws.readyState!==1) return res({ok:false,error:"not connected"});
       const id = this.id++;
