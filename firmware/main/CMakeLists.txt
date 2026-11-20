@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.cpp" "hal_esp32.cpp" "settings.cpp" "api.cpp" "net.cpp" "web.cpp" "ota.cpp"
+    SRCS "main.cpp" "logbuf.cpp" "hal_esp32.cpp" "settings.cpp" "api.cpp" "net.cpp" "web.cpp" "ota.cpp"
          "core/robot.cpp" "core/config.cpp"
     INCLUDE_DIRS "."
     EMBED_TXTFILES "../web/index.html"

@@ -313,6 +313,39 @@ static void TestHandCalibrate() {
   r.run(0.01f);
   CHECK(r.robot.handMark(kElbow, 1), "%s", r.robot.lastError());
   CHECK(!r.robot.handFinish(kElbow), "should fail without the switch");
+
+  // Roll: mark "flat", turn one full turn, mark again. No switch needed, and
+  // the flat mark reads 0 deg afterwards.
+  auto turnRoll = [&](float deg) {
+    float jr[kJoints];
+    for (int i = 0; i < 2000 && std::fabs(deg) > 1e-4f; ++i) {
+      const float step = std::max(-0.5f, std::min(0.5f, deg));
+      SimArm::ToJoints(r.sim.mcount, jr);
+      jr[kRoll] += step * r.sim.true_cpu[kRoll];
+      SimArm::ToMotors(jr, r.sim.mcount);
+      r.run(0.002f);
+      deg -= step;
+    }
+  };
+  turnRoll(37.f);  // flat is wherever the user says it is
+  CHECK(r.robot.handBegin(kRoll), "%s", r.robot.lastError());
+  CHECK(r.robot.handMark(kRoll, 0), "%s", r.robot.lastError());
+  turnRoll(-360.f);
+  CHECK(r.robot.handMark(kRoll, 1), "%s", r.robot.lastError());
+  CHECK(r.robot.handFinish(kRoll), "%s", r.robot.lastError());
+  const float rerr = (r.robot.calibResult(kRoll).counts_per_unit - r.sim.true_cpu[kRoll]) / r.sim.true_cpu[kRoll];
+  CHECK(std::fabs(rerr) < 0.02f, "roll cpu %.2f vs true %.2f", r.robot.calibResult(kRoll).counts_per_unit, r.sim.true_cpu[kRoll]);
+  CHECK(r.robot.status().homed[kRoll], "roll should be homed");
+  CHECK(!r.cfg.joint[kRoll].has_switch, "roll is hand-zeroed from now on");
+  turnRoll(360.f + 90.f);  // back to flat, then 90 more
+  r.run(0.05f);
+  CHECK(std::fabs(std::fabs(r.robot.status().pos[kRoll]) - 90.f) < 2.f, "roll reads %.2f, want 90 from flat", r.robot.status().pos[kRoll]);
+
+  // Gripper: calibrated with the motors on (jogged), not by hand.
+  r.robot.enable();
+  CHECK(r.robot.handBegin(kGripper), "gripper hand calibration with motors on: %s", r.robot.lastError());
+  CHECK(!r.robot.handBegin(kShoulder), "other joints must refuse while enabled");
+  CHECK(!r.robot.home(kRoll), "roll has no switch now: homing it alone is refused");
 }
 
 static void TestDifferentialWrist() {

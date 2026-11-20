@@ -84,7 +84,7 @@ struct RobotConfig {
   uint16_t trip_ms = 1000;          // over-current must last this long to trip (the driver chops anyway)
   uint8_t home_order[kJoints] = {kShoulder, kElbow, kPitch, kRoll, kGripper, kBase};
   float gripper_open_mm = 40.f;     // opening after homing the gripper
-  uint16_t jog_timeout_ms = 300;    // jog stops if no heartbeat
+  uint16_t jog_timeout_ms = 600;    // jog stops if no heartbeat
 };
 
 // Defaults from the SCORBOT-ER 4u manual (joint ranges) plus estimates for

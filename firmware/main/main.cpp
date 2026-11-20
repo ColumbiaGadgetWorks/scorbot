@@ -6,6 +6,7 @@
 //   network  core 0: WiFi supervisor, captive DNS, HTTP + WebSocket (20 Hz state)
 #include "core/robot.h"
 #include "esp_log.h"
+#include "logbuf.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -62,6 +63,7 @@ void IoTask(void*) { g_hal.ioLoop(); }
 }  // namespace
 
 extern "C" void app_main() {
+  logbuf::Start();
   ESP_LOGI(TAG, "reset reason %d (1 power-on, 3 software, 4 panic, 9 brownout)", static_cast<int>(esp_reset_reason()));
   esp_err_t err = nvs_flash_init();
   if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {

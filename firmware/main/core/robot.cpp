@@ -419,9 +419,17 @@ void Robot::setPhase(Phase p, const char* name) {
 bool Robot::home(int joint) {
   if (!canMove()) return false;
   queue_len_ = queue_pos_ = 0;
+  // A continuous joint (roll) without a switch has nothing to home against:
+  // its zero is set by hand (Calibrate > Hand calibration).
+  auto homeable = [&](int j) { return cfg_.joint[j].has_switch || !cfg_.joint[j].continuous; };
   if (joint < 0) {
-    for (int k = 0; k < kJoints; ++k) queue_[queue_len_++] = cfg_.home_order[k];
+    for (int k = 0; k < kJoints; ++k)
+      if (homeable(cfg_.home_order[k])) queue_[queue_len_++] = cfg_.home_order[k];
   } else if (joint < kJoints) {
+    if (!homeable(joint)) {
+      std::snprintf(err_, sizeof(err_), "no home switch: set its zero with hand calibration");
+      return false;
+    }
     queue_[queue_len_++] = joint;
   } else {
     return false;
@@ -749,10 +757,13 @@ bool Robot::selfTest() {
 // ---------------------------------------------------------------------------
 bool Robot::handBegin(int j) {
   if (j < 0 || j >= kJoints) return false;
-  if (st_.enabled) {
+  // The gripper's leadscrew can't be turned by hand: it is jogged to each end
+  // with the motors on. Every other joint is moved by hand, motors off.
+  if (st_.enabled && j != kGripper) {
     std::snprintf(err_, sizeof(err_), "disable the motors first");
     return false;
   }
+  if (j == kGripper) st_.homed[j] = false;  // so the old soft limits don't stop the jog short of the ends
   hand_j_ = j;
   hand_has_[0] = hand_has_[1] = false;
   hand_sw_seen_ = false;
@@ -782,7 +793,8 @@ bool Robot::handFinish(int j) {
   r.min_counts = static_cast<int32_t>(lo);
   r.max_counts = static_cast<int32_t>(hi);
   const float span = hi - lo;
-  const bool sw = j < kSwitches && jc.has_switch;
+  // Roll needs no switch: its first mark ("flat") is 0 degrees.
+  const bool sw = j < kSwitches && jc.has_switch && !jc.continuous;
   const char* unit = j == kGripper ? "mm" : "deg";
   if (span < 50.f)
     std::snprintf(r.note, sizeof(r.note), "span only %.0f counts: move it end to end", span);
@@ -796,12 +808,15 @@ bool Robot::handFinish(int j) {
   // The zero is the switch edge homing finds: the home_dir side of the pressed region.
   const float edge = jc.home_dir > 0 ? hand_sw_hi_ : hand_sw_lo_;
   float zero;
-  if (jc.continuous) {  // the two marks are one full turn apart
+  if (jc.continuous) {  // mark 0 is "flat" (0 deg); mark 1 is one full turn from it
     r.counts_per_unit = span / 360.f;
     r.home_pos = jc.home_pos;
     r.soft_min = jc.soft_min;
     r.soft_max = jc.soft_max;
-    zero = sw ? edge : jointCounts(j);
+    zero = hand_mark_[0] + jc.home_pos * r.counts_per_unit;  // reads 0 at the flat mark
+    // Zeroed by hand from now on: Home All leaves it alone instead of
+    // hunting for a switch it may not have.
+    cfg_.joint[j].has_switch = false;
   } else {
     r.counts_per_unit = span / (jc.spec_max - jc.spec_min);
     const float margin = j == kGripper ? 1.f : 3.f;
@@ -817,7 +832,9 @@ bool Robot::handFinish(int j) {
   }
   r.home_counts = static_cast<int32_t>(zero);
   r.result = Result::kPass;
-  if (sw)
+  if (jc.continuous)
+    std::snprintf(r.note, sizeof(r.note), "%.1f counts/%s, flat = 0 %s", r.counts_per_unit, unit, unit);
+  else if (sw)
     std::snprintf(r.note, sizeof(r.note), "%.1f counts/%s, switch at %.1f %s", r.counts_per_unit, unit, r.home_pos, unit);
   else
     std::snprintf(r.note, sizeof(r.note), "%.1f counts/%s", r.counts_per_unit, unit);

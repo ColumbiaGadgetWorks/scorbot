@@ -106,6 +106,7 @@ form.cfg label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:v
   <button id="stopBtn" class="danger" title="Stop all motion (Esc)">STOP</button>
 </header>
 <div class="fault" id="faultBar"><span id="faultText"></span><span class="spacer"></span><span class="muted">Enable again to clear it.</span></div>
+<div class="banner" id="linkBar"></div>
 <div class="banner" id="demoBar">Demo mode: no controller found, so this page is driving a simulated arm. Open it from the controller's IP to drive the real one.</div>
 <nav id="tabs">
   <button data-tab="control" class="on">Control</button>
@@ -239,6 +240,12 @@ form.cfg label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:v
       <div class="row" style="margin-top:10px"><button id="cfgDefaults">Factory defaults</button><button id="rebootBtn">Reboot controller</button></div>
     </div>
     <div class="card">
+      <h3>Logs</h3>
+      <p class="hint">What this page saw (connection drops, faults, errors) plus the controller's own recent log. Copy it or save it as a text file when something goes wrong.</p>
+      <div class="row"><button id="logCopy">Copy logs</button><button id="logSave">Download .txt</button></div>
+      <p id="logMsg" class="muted"></p>
+    </div>
+    <div class="card">
       <h3>Firmware</h3>
       <p class="hint">Updates come from the project's GitHub build for this controller's driver type. The controller must be on a WiFi network with internet. The motors are switched off during an update; settings and calibration are kept.</p>
       <p id="otaInfo" class="muted">…</p>
@@ -267,7 +274,10 @@ let S = null;          // latest state
 let CFG = null;        // robot config
 let demo = null;       // MockRobot when no controller is reachable
 
-function toast(msg, ms=2600){ const t=$("#toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(toast.t); toast.t=setTimeout(()=>t.classList.remove("on"),ms); }
+// Page event log (Settings > Logs): connection changes, mode changes, faults, messages.
+const UILOG = [];
+function logEvent(msg){ UILOG.push(new Date().toISOString().slice(11,23)+"  "+msg); if(UILOG.length>1000) UILOG.splice(0, UILOG.length-1000); }
+function toast(msg, ms=2600){ logEvent("message: "+msg); const t=$("#toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(toast.t); toast.t=setTimeout(()=>t.classList.remove("on"),ms); }
 
 // ---------------------------------------------------------------------------
 // Live state on /ws: binary wire::Live frames (firmware/main/api.h), read in
@@ -297,7 +307,13 @@ function decodeLive(buf){
     fault:cstr(buf, 188, 64), phase:cstr(buf, 252, 32),
   }, {mtest:INFO.mtest, cal:INFO.cal, hw:Object.assign({}, INFO.hw, {rssi:new Int8Array(buf, 11, 1)[0], uptime:new Uint32Array(buf, 184, 1)[0]})});
 }
-let staleWarned = false;
+let staleWarned = false, badFrames = 0;
+// Only a page that isn't served by a controller (the GitHub page, a local
+// preview) falls back to the simulated arm. On the controller's own address a
+// dropped link just reconnects: a simulator and the real arm must never both
+// drive the screen.
+const canDemo = () => /(^|\.)github\.io$|^localhost$|^127\.0\.0\.1$|^\[::1\]$/.test(location.hostname);
+const LINK = {drops:0, downSince:0, lastFrame:0};
 
 // ---------------------------------------------------------------------------
 // connection: WebSocket for state + commands, REST for config
@@ -319,11 +335,16 @@ const Conn = {
       const ws = new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");
       ws.binaryType = "arraybuffer";
       this.ws = ws;
-      ws.onopen = () => { this.up=true; firstFail=false; setConn(true); loadConfig(); };
+      ws.onopen = () => { this.up=true; firstFail=false; LINK.lastFrame=performance.now(); logEvent("link: connected to the controller"); setConn(true); loadConfig(); };
       ws.onmessage = ev => {
         if (ev.data instanceof ArrayBuffer) {
           const s = decodeLive(ev.data);
-          if (s) onState(s); else if (!staleWarned) { staleWarned=true; toast("⚠ Controller firmware changed: reload this page", 8000); }
+          LINK.lastFrame = performance.now();
+          if (s) { badFrames=0; onState(s); return; }
+          // One bad frame is noise; a steady stream of them means this page is
+          // older or newer than the firmware.
+          if (++badFrames<=3) { const h=new Uint8Array(ev.data, 0, Math.min(3, ev.data.byteLength)); logEvent(`bad state frame: ${ev.data.byteLength} bytes, header ${Array.from(h).join(" ")}`); }
+          if (badFrames>=10 && !staleWarned) { staleWarned=true; toast("⚠ This page doesn't match the controller's firmware: reload it (Ctrl+F5)", 8000); }
           return;
         }
         let m; try{ m=JSON.parse(ev.data);}catch(e){return;}
@@ -331,10 +352,28 @@ const Conn = {
         else if (m.t==="state") onState(m);
         else if (m.t==="reply"&&this.pending.has(m.id)) { this.pending.get(m.id)(m); this.pending.delete(m.id); }
       };
-      ws.onclose = () => { this.up=false; setConn(false); if(firstFail && !demo){ startDemo(); return; } setTimeout(open, 1500); };
+      ws.onclose = ev => {
+        if (this.ws!==ws) return;  // an old socket we already replaced
+        if (this.up) { LINK.drops++; LINK.downSince=performance.now(); }
+        logEvent(`link: closed (code ${ev.code}${ev.reason?", "+ev.reason:""})`);
+        this.up=false; setConn(false);
+        if (demo) return;
+        if (firstFail && canDemo()) { startDemo(); return; }
+        setTimeout(open, 1500);
+      };
     };
     open();
-    setTimeout(()=>{ if(!this.up && !demo) { try{this.ws.close();}catch(e){} startDemo(); } }, 4000);
+    setTimeout(()=>{ if(!this.up && !demo && canDemo()) { try{this.ws.close();}catch(e){} startDemo(); } }, 4000);
+    // A socket can stay "open" after the WiFi link is gone: no state for 3 s
+    // means the link is dead, so drop it and reconnect.
+    setInterval(()=>{
+      if (this.up && performance.now()-LINK.lastFrame > 3000) {
+        logEvent("link: no data for 3 s, reconnecting");
+        const old=this.ws; this.ws=null; try{ old.close(); }catch(e){}  // its onclose is ignored: we reconnect now
+        this.up=false; LINK.drops++; LINK.downSince=performance.now(); setConn(false); open();
+      }
+      updateLinkBar();
+    }, 1000);
   },
   send(msg){
     if (demo) return Promise.resolve(demo.handle(msg));
@@ -383,6 +422,19 @@ async function cmd(msg, okMsg){
 }
 function setConn(up){
   const p=$("#pConn"); p.className="pill "+(up?"ok":"bad"); p.lastChild.textContent = demo?"demo (simulated)":(up?"connected":"offline");
+  updateLinkBar();
+}
+// Says plainly which link is the problem: browser <-> ESP32, or ESP32 <-> arm power.
+function updateLinkBar(){
+  const b=$("#linkBar"); if(!b) return;
+  let msg="";
+  if (demo) msg="";
+  else if (!Conn.up && (LINK.downSince || performance.now()>3000)) {
+    const secs = LINK.downSince ? Math.round((performance.now()-LINK.downSince)/1000) : 0;
+    msg = `No connection to the controller (the ESP32's WiFi link to this browser)${secs?` for ${secs} s`:""}: reconnecting… This is the web link, not the arm.`
+        + (LINK.drops>1 ? ` Dropped ${LINK.drops} times since this page opened: Settings > Logs has the details.` : "");
+  } else if (S && !S.vm_ok) msg = "Connected to the controller, but the arm has no motor power (motor supply off, or the E-stop is pressed).";
+  b.textContent = msg; b.classList.toggle("on", !!msg);
 }
 function startDemo(){ if(demo) return; demo = new MockRobot(); $("#demoBar").classList.add("on"); setConn(true); loadConfig(); demo.run(onState); }
 
@@ -394,6 +446,10 @@ function onState(s){
   const now = performance.now();
   if (lastCounts && now>lastT) { const dt=(now-lastT)/1000; for(let m=0;m<6;m++) rates[m] = 0.7*rates[m] + 0.3*(s.counts[m]-lastCounts[m])/dt; }
   lastCounts = s.counts.slice(); lastT = now;
+  if (!S || S.mode!==s.mode) logEvent(`mode: ${S?S.mode:"?"} → ${s.mode}${s.fault?" ("+s.fault+")":""}`);
+  if (S && S.vm_ok!==s.vm_ok) logEvent(s.vm_ok ? "motor power on" : "motor power off");
+  if (S && S.enabled!==s.enabled) logEvent(s.enabled ? "motors enabled" : "motors disabled");
+  if (S && S.vm_ok!==s.vm_ok) setTimeout(updateLinkBar);
   S = s;
   scheduleRender();
 }
@@ -436,9 +492,9 @@ function buildJoints(){
     jointRows.push({row,val,bar,inp,small:row.querySelector("small"),btns:[minus,plus]});
   }
 }
-function holdJog(btn, j, dir){
+function holdJog(btn, j, dir, speed=speedFrac){
   let timer=null;
-  const send = () => Conn.send({cmd:"jog", joint:j, speed:dir*speedFrac()});
+  const send = () => Conn.send({cmd:"jog", joint:j, speed:dir*speed()});
   const start = e => { e.preventDefault(); if(timer) return; btn.classList.add("active"); send().then(r=>{ if(!r.ok) toast("⚠ "+r.error); }); timer=setInterval(send,100); };
   const stop = () => { if(!timer) return; clearInterval(timer); timer=null; btn.classList.remove("active"); Conn.send({cmd:"jog", joint:j, speed:0}); };
   btn.addEventListener("pointerdown", start); ["pointerup","pointerleave","pointercancel"].forEach(ev=>btn.addEventListener(ev, stop));
@@ -572,8 +628,8 @@ const HAND_TIPS = [
   ["Push the shoulder all the way back until it stops.", "Now bring it all the way forward until it stops, passing the home switch."],
   ["Fold the elbow fully up until it stops.", "Now swing it fully down until it stops, passing the home switch."],
   ["Tilt the wrist fully up until it stops.", "Now tilt it fully down until it stops, passing the home switch."],
-  ["Put a pencil mark on the gripper and the wrist so they line up.", "Turn the gripper exactly one full turn (either way) until the marks line up again. It must pass the home switch."],
-  ["Close the gripper fully by hand.", "Now open it fully."],
+  ["Turn the wrist roll by hand until the gripper is flat (jaws level). This becomes 0°.", "Now turn it exactly one full turn clockwise, back to flat."],
+  ["Jog the gripper fully closed with the buttons below. Let go as soon as the jaws stop moving.", "Now jog it fully open, until it stops opening."],
 ];
 const hw = {j:0, step:"start", result:null};
 function handGo(step){ hw.step=step; drawHand(); }
@@ -587,16 +643,19 @@ function drawHand(){
   if(hw.step==="start"){
     box.append(el("div",{class:"row"},
       el("button",{class:"primary",onclick:async()=>{ if(S&&S.enabled){ const r=await cmd({cmd:"disable"}); if(!r.ok) return; } hw.j=0; handGo("dir"); }},"Start (turns the motors off)"),
-      el("span",{class:"muted"},"Joints with a good calibration can be skipped.")));
+      el("button",{onclick:async()=>{ if(S&&S.enabled){ const r=await cmd({cmd:"disable"}); if(!r.ok) return; } const r=await cmd({cmd:"hand_begin",joint:4}); if(r.ok){ hw.j=4; handGo("end0"); } }},"Set wrist roll zero only"),
+      el("button",{onclick:()=>{ hw.j=5; handGo("dir"); }},"Gripper only"),
+      el("span",{class:"muted"},"Joints with a good calibration can be skipped. Wrist roll has no home switch: set its zero after every power-up.")));
   } else if(hw.step==="dir"){
-    box.append(head(), el("p",{},`Move the ${name.toLowerCase()} a little each way by hand and watch the 3D view. Does the model move the same way?`), live,
+    box.append(head(), el("p",{}, j===5 ? "The gripper's leadscrew can't be turned by hand: turn the motors on and jog it a little each way with the buttons below. Does the model move the same way?"
+                                          : `Move the ${name.toLowerCase()} a little each way by hand and watch the 3D view. Does the model move the same way?`), live, j===5?gripJog():"",
       el("div",{class:"row"},
         el("button",{class:"primary",onclick:async()=>{ const r=await cmd({cmd:"hand_begin",joint:j}); if(r.ok) handGo("end0"); }},"Yes, same way"),
         el("button",{onclick:async()=>{ const r=await cmd({cmd:"invert_joint",joint:j},`Reversed ${name}: check again`); if(r.ok) loadConfig(); }},"No, it's backwards"),
         j===4?el("span",{class:"muted"},"If pitch was right but roll is backwards, reversing here is fine."):"", skip));
   } else if(hw.step==="end0"||hw.step==="end1"){
     const e=hw.step==="end0"?0:1;
-    box.append(head(), el("p",{},HAND_TIPS[j][e]), live,
+    box.append(head(), el("p",{},HAND_TIPS[j][e]), live, j===5?gripJog():"",
       el("div",{class:"row"},
         el("button",{class:"primary",onclick:async()=>{
           const r=await cmd({cmd:"hand_mark",joint:j,end:e}); if(!r.ok) return;
@@ -606,7 +665,8 @@ function drawHand(){
         e?el("button",{class:"small",onclick:async()=>{ const r=await cmd({cmd:"hand_begin",joint:j}); if(r.ok) handGo("end0"); }},"Start this joint over"):"", skip));
   } else if(hw.step==="result"){
     const f=hw.result||{};
-    box.append(head(), el("p",{},`✓ ${f.note||"done"}. Soft limits ${fmt(f.smin,0)} … ${fmt(f.smax,0)}${JU[j]}. Saved.`), live,
+    box.append(head(), el("p",{}, j===4 ? `✓ ${f.note||"done"}. Saved. Roll has no home switch, so set its zero again after each power-up (Home All skips it).`
+                                          : `✓ ${f.note||"done"}. Soft limits ${fmt(f.smin,0)} … ${fmt(f.smax,0)}${JU[j]}. Saved.`), live,
       el("div",{class:"row"}, el("button",{class:"primary",onclick:handNext},j<5?"Next joint":"Next: motor directions"),
         el("button",{onclick:async()=>{ const r=await cmd({cmd:"hand_begin",joint:j}); if(r.ok) handGo("end0"); }},"Redo this joint")));
   } else if(hw.step==="motors"){
@@ -626,12 +686,20 @@ function drawHand(){
   }
   renderHand();
 }
+// Slow hold-to-jog buttons for the gripper (motors on).
+function gripJog(){
+  const close=el("button",{},"◀ Close"), open=el("button",{},"Open ▶"), slow=()=>0.25;
+  holdJog(close, 5, -1, slow); holdJog(open, 5, 1, slow);
+  return el("div",{class:"row",style:"margin:6px 0"},
+    el("button",{onclick:()=>cmd({cmd:"enable"})},"Turn motors on"), close, open,
+    el("span",{class:"muted"},"Hold to jog slowly, let go to stop. If the labels are backwards, just use the other button."));
+}
 function renderHand(){
   const live=$("#handLive");
   if(live && S){ const j=hw.j;
     live.replaceChildren(el("span",{class:"pill"},`${fmt(S.pos[j],1)}${JU[j]}`),
-      j<5?el("span",{class:"pill "+(S.sw[j]?"ok":"")},S.sw[j]?"home switch: pressed":"home switch: open"):"",
-      S.enabled?el("span",{class:"pill warn"},"motors are on: disable them to move the arm by hand"):""); }
+      j<4?el("span",{class:"pill "+(S.sw[j]?"ok":"")},S.sw[j]?"home switch: pressed":"home switch: open"):"",
+      S.enabled&&j<5?el("span",{class:"pill warn"},"motors are on: disable them to move the arm by hand"):""); }
   const t=$("#handMotors");
   if(t && S) S.mtest.forEach((r,m)=>{ const row=t.rows[m+1]; setBadge(row.cells[1].firstChild, r.r); row.cells[2].textContent=r.note||""; });
 }
@@ -894,7 +962,7 @@ class MockRobot {
       case "invert_joint": this.cfg.motors[m.joint].enc_dir*=-1; this.homed[m.joint]=false; return ok;
       case "zero_here": this.homed[m.joint]=true; return ok;
       case "set_cpu": this.cfg.joints[m.joint].counts_per_unit=m.value; this.cfg.joints[m.joint].cpu_calibrated=true; return ok;
-      case "hand_begin": if(this.enabled) return no("disable the motors first"); this.hand={j:m.joint,has:[false,false]}; this.cal[m.joint]={r:"pending",note:""}; return ok;
+      case "hand_begin": if(this.enabled && m.joint!==5) return no("disable the motors first"); this.hand={j:m.joint,has:[false,false]}; this.cal[m.joint]={r:"pending",note:""}; return ok;
       case "hand_mark": { const h=this.hand; if(!h||h.j!==m.joint) return no("start hand calibration of that joint first"); const jc=this.cfg.joints[h.j];
         // demo: there are no hands, so jump the joint to the end it is asked for
         this.pos[h.j] = jc.continuous ? this.pos[h.j]+(m.end?360:0) : (m.end?jc.spec_max:jc.spec_min); this.tgt=this.pos.slice(); h.has[m.end]=true; return ok; }
@@ -903,7 +971,8 @@ class MockRobot {
         const smin=jc.continuous?jc.soft_min:jc.spec_min+(j===5?1:3), smax=jc.continuous?jc.soft_max:jc.spec_max-(j===5?1:3), unit=j===5?"mm":"deg";
         const note=j===5?`${cpu} counts/${unit}`:`${cpu} counts/${unit}, switch at ${home} ${unit}`;
         this.cal[j]={r:"pass",min:0,max:0,cpu,home,smin,smax,note}; Object.assign(jc,{counts_per_unit:cpu,cpu_calibrated:true,home_pos:home,soft_min:smin,soft_max:smax});
-        this.homed[j]=true; this.hand=null; return {ok:true,note,cpu,home,smin,smax}; }
+        if(jc.continuous){ jc.has_switch=false; this.pos[j]=0; this.tgt[j]=0; }  // back at flat, one turn on
+        this.homed[j]=true; this.hand=null; return {ok:true,note:jc.continuous?`${cpu} counts/deg, flat = 0 deg`:note,cpu,home,smin,smax}; }
       case "reset_switch_test": this.swOn.fill(false); this.swOff.fill(false); return ok;
       case "reset_encoder_test": this.emin=this.emax=null; return ok;
       case "defaults": return ok;
@@ -971,7 +1040,36 @@ $("#goZeroBtn").onclick = ()=>cmd({cmd:"move",pos:[0,0,0,0,null,null],speed:spee
 $("#gripOpenBtn").onclick = ()=>moveJoint(5, (CFG&&CFG.gripper_open_mm)||40);
 $("#gripCloseBtn").onclick = ()=>moveJoint(5, 0);
 $("#speed").oninput = e=>$("#speedVal").textContent=e.target.value+"%";
-buildJoints(); buildTest(); buildCalib(); buildSettings(); viewer.init();
+async function gatherLogs(){
+  let ctl;
+  if (demo) ctl = "(demo mode: no controller)";
+  else try {
+    const r = await fetch("/api/log", {cache:"no-store"});
+    ctl = r.ok ? await r.text() : `(no controller log: HTTP ${r.status}; firmware older than this page?)`;
+  } catch(e) { ctl = "(couldn't reach the controller: "+e.message+")"; }
+  return [`Scorbot log, ${new Date().toString()}`, `Page: ${location.origin}${location.pathname}`, `Browser: ${navigator.userAgent}`,
+    `Controller: ${JSON.stringify(INFO.hw||{})}`, `Link: ${demo?"demo":Conn.up?"connected":"offline"}, dropped ${LINK.drops} times`,
+    `State: ${S?S.mode+(S.fault?" ("+S.fault+")":"")+", motor power "+(S.vm_ok?"on":"off")+", "+(S.enabled?"enabled":"disabled"):"none yet"}`,
+    "", "=== This page ===", ...UILOG, "", "=== Controller ===", ctl].join("\n");
+}
+function setupLogs(){
+  $("#logCopy").onclick = async ()=>{
+    const text = await gatherLogs();
+    try { await navigator.clipboard.writeText(text); }
+    catch(e) {  // the controller is plain http: no Clipboard API there
+      const t=el("textarea",{style:"position:fixed;opacity:0"}); t.value=text; document.body.append(t); t.select();
+      const ok=document.execCommand("copy"); t.remove(); if(!ok){ $("#logMsg").textContent="Copy was blocked: use Download instead."; return; }
+    }
+    $("#logMsg").textContent = `Copied ${text.split("\n").length} lines.`;
+  };
+  $("#logSave").onclick = async ()=>{
+    const text = await gatherLogs(), d=new Date(), p=n=>String(n).padStart(2,"0");
+    const a=el("a",{download:`scorbot-log-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.txt`});
+    a.href=URL.createObjectURL(new Blob([text],{type:"text/plain"})); document.body.append(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+    $("#logMsg").textContent = "Saved "+a.download;
+  };
+}
+buildJoints(); buildTest(); buildCalib(); buildSettings(); setupLogs(); viewer.init();
 try{ const t=localStorage.getItem("scorbot.tab"); if(t){ const b=document.querySelector(`#tabs [data-tab="${t}"]`); if(b) b.click(); } }catch(e){}
 Conn.start();
 </script>

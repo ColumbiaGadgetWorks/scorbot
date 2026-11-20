@@ -1,6 +1,8 @@
 #include "web.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -10,6 +12,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "logbuf.h"
 #include "net.h"
 #include "ota.h"
 
@@ -117,6 +120,13 @@ cJSON* RunCommand(const cJSON* msg) {
 esp_err_t Index(httpd_req_t* req) {
   httpd_resp_set_type(req, "text/html");
   return httpd_resp_send(req, index_html_start, index_html_end - index_html_start - 1);
+}
+
+esp_err_t GetLog(httpd_req_t* req) {
+  const std::string text = logbuf::Text();
+  httpd_resp_set_type(req, "text/plain; charset=utf-8");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  return httpd_resp_send(req, text.data(), text.size());
 }
 
 esp_err_t GetState(httpd_req_t* req) {
@@ -265,6 +275,56 @@ esp_err_t NotFound(httpd_req_t* req, httpd_err_code_t) {
   return httpd_resp_send(req, nullptr, 0);
 }
 
+// Pushes to WebSocket clients run on the HTTP server's own task (queued with
+// httpd_queue_work), never on the broadcaster's. Command replies are sent on
+// that task too, so two frames can never be written to one socket at the same
+// time: interleaved bytes corrupt the stream and the browser drops the link.
+struct Push {
+  bool binary;
+  size_t len;
+  uint8_t data[];
+};
+std::atomic<int> g_pushes{0};  // queued, not yet sent
+
+void SendPush(void* arg) {
+  Push* p = static_cast<Push*>(arg);
+  size_t n = 8;
+  int fds[8];
+  if (httpd_get_client_list(g_server, &n, fds) == ESP_OK) {
+    for (size_t i = 0; i < n; ++i) {
+      if (httpd_ws_get_fd_info(g_server, fds[i]) != HTTPD_WS_CLIENT_WEBSOCKET) continue;
+      httpd_ws_frame_t f = {};
+      f.type = p->binary ? HTTPD_WS_TYPE_BINARY : HTTPD_WS_TYPE_TEXT;
+      f.payload = p->data;
+      f.len = p->len;
+      if (httpd_ws_send_frame_async(g_server, fds[i], &f) != ESP_OK) {
+        ESP_LOGW(TAG, "ws send to socket %d failed: closing it", fds[i]);
+        httpd_sess_trigger_close(g_server, fds[i]);
+      }
+    }
+  }
+  std::free(p);
+  --g_pushes;
+}
+
+// Queues one frame for every WebSocket client. Returns false (frame dropped)
+// if the server is still busy with earlier ones, e.g. a client on weak WiFi.
+bool QueuePush(const void* data, size_t len, bool binary, int max_queued) {
+  if (g_pushes.load() >= max_queued) return false;
+  Push* p = static_cast<Push*>(std::malloc(sizeof(Push) + len));
+  if (!p) return false;
+  p->binary = binary;
+  p->len = len;
+  std::memcpy(p->data, data, len);
+  ++g_pushes;
+  if (httpd_queue_work(g_server, SendPush, p) != ESP_OK) {
+    std::free(p);
+    --g_pushes;
+    return false;
+  }
+  return true;
+}
+
 // /ws push: a binary wire::Live frame at 20 Hz, plus the slow-changing
 // {"t":"info"} JSON only when it changes (or a client has just connected).
 // Under the lock we only copy plain structs; JSON is built after releasing it,
@@ -274,8 +334,10 @@ void Broadcaster(void*) {
   static InfoSnapshot snap;
   std::string last_info;
   int known[8] = {}, n_known = 0;
-  uint8_t last_mode = 0xff;
+  uint8_t last_mode = 0xff, last_logged_mode = 0xff;
   int8_t last_busy = -2;
+  uint32_t dropped = 0;
+  bool info_owed = false;  // a new client hasn't had the info yet
   TickType_t last = xTaskGetTickCount();
   for (uint32_t tick = 0;; ++tick) {
     vTaskDelayUntil(&last, pdMS_TO_TICKS(50));  // 20 Hz
@@ -288,6 +350,7 @@ void Broadcaster(void*) {
       ws[n_ws++] = fds[i];
       new_client |= std::find(known, known + n_known, fds[i]) == known + n_known;
     }
+    if (n_ws != n_known) ESP_LOGI(TAG, "web clients: %d (was %d)", n_ws, n_known);
     std::copy(ws, ws + n_ws, known);
     n_known = n_ws;
     if (n_ws == 0) {
@@ -295,7 +358,7 @@ void Broadcaster(void*) {
       continue;
     }
     const HwInfo hw = Hw();
-    bool info_due = new_client || tick % 10 == 0;  // re-check the info at 2 Hz
+    bool info_due = new_client || info_owed || tick % 10 == 0;  // re-check the info at 2 Hz
     {
       Locked l;
       api::FillLive(*g_app->robot, *g_app->cfg, hw, &live);
@@ -306,24 +369,24 @@ void Broadcaster(void*) {
     last_mode = live.mode;
     last_busy = live.busy;
 
-    httpd_ws_frame_t f = {};
-    f.type = HTTPD_WS_TYPE_BINARY;
-    f.payload = reinterpret_cast<uint8_t*>(&live);
-    f.len = sizeof(live);
-    for (int i = 0; i < n_ws; ++i) httpd_ws_send_frame_async(g_server, ws[i], &f);
+    if (live.mode != last_logged_mode) {
+      ESP_LOGI(TAG, "mode %u%s%s", live.mode, live.fault[0] ? ": " : "", live.fault);
+      last_logged_mode = live.mode;
+    }
+    // A late state frame is worthless (the next one is 50 ms behind it): drop
+    // it rather than let a backlog build up.
+    if (!QueuePush(&live, sizeof(live), true, 2) && ++dropped % 100 == 1)
+      ESP_LOGW(TAG, "web link slow: dropped %u state frames", static_cast<unsigned>(dropped));
 
     if (!info_due) continue;
     cJSON* j = api::Info(snap, hw);
     char* s = cJSON_PrintUnformatted(j);
     cJSON_Delete(j);
     if (!s) continue;
-    if (new_client || last_info != s) {
-      last_info = s;
-      httpd_ws_frame_t t = {};
-      t.type = HTTPD_WS_TYPE_TEXT;
-      t.payload = reinterpret_cast<uint8_t*>(s);
-      t.len = std::strlen(s);
-      for (int i = 0; i < n_ws; ++i) httpd_ws_send_frame_async(g_server, ws[i], &t);
+    // Info must arrive: if it can't be queued now, it is retried next time.
+    if (new_client || info_owed || last_info != s) {
+      info_owed = !QueuePush(s, std::strlen(s), false, 4);
+      if (!info_owed) last_info = s;
     }
     cJSON_free(s);
   }
@@ -350,12 +413,16 @@ void Start(App* app) {
   cfg.stack_size = 8192;
   cfg.core_id = 0;
   cfg.max_open_sockets = 7;
+  // A client that stops reading (WiFi gone) must not hold up the server task
+  // for long: every push and reply goes through it.
+  cfg.send_wait_timeout = 2;
   if (httpd_start(&g_server, &cfg) != ESP_OK) {
     ESP_LOGE(TAG, "HTTP server failed to start");
     return;
   }
   Add("/", HTTP_GET, Index);
   Add("/api/state", HTTP_GET, GetState);
+  Add("/api/log", HTTP_GET, GetLog);
   Add("/api/cmd", HTTP_POST, PostCmd);
   Add("/api/config", HTTP_GET, GetConfig);
   Add("/api/config", HTTP_POST, PostConfig);

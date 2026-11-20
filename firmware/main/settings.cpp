@@ -91,6 +91,7 @@ void BindGlobals(Io io, RobotConfig& c) {
   if (c.trip_ms < 50) c.trip_ms = RobotConfig{}.trip_ms;
   io.f("gripper_open_mm", c.gripper_open_mm);
   io.i("jog_timeout_ms", c.jog_timeout_ms);
+  if (c.jog_timeout_ms < 500) c.jog_timeout_ms = 600;  // shorter stops jogs on ordinary WiFi hiccups
 }
 
 #ifndef SETTINGS_HOST_TEST
