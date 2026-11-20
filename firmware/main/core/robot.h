@@ -153,6 +153,7 @@ class Robot {
   uint32_t jog_deadline_[kJoints] = {};
   float fe_ms_[kMotors] = {};     // time spent over the following-error limit
   float stall_ms_[kJoints] = {};
+  bool grip_settled_ = false;     // gripper parked inside its hold band: motor off
   bool open_loop_ = false;        // motor test drives duty directly
   float open_duty_[kMotors] = {};
 

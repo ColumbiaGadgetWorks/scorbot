@@ -61,8 +61,8 @@ void Robot::motorsToJoints(const float* m, float* j) const {
   j[kBase] = m[0];
   j[kShoulder] = m[1];
   j[kElbow] = m[2];
-  j[kPitch] = 0.5f * (m[3] - m[4]);
-  j[kRoll] = 0.5f * (m[3] + m[4]);
+  j[kPitch] = cfg_.pitch_sign * 0.5f * (m[3] - m[4]);
+  j[kRoll] = cfg_.roll_sign * 0.5f * (m[3] + m[4]);
   j[kGripper] = m[5];
 }
 
@@ -70,8 +70,9 @@ void Robot::jointsToMotors(const float* j, float* m) const {
   m[0] = j[kBase];
   m[1] = j[kShoulder];
   m[2] = j[kElbow];
-  m[3] = j[kRoll] + j[kPitch];
-  m[4] = j[kRoll] - j[kPitch];
+  const float p = cfg_.pitch_sign * j[kPitch], r = cfg_.roll_sign * j[kRoll];
+  m[3] = r + p;
+  m[4] = r - p;
   m[5] = j[kGripper];
 }
 
@@ -247,8 +248,27 @@ void Robot::control(float dt) {
     float cap = mc.max_duty;
     if (st_.mode == Mode::kCalibrating || st_.mode == Mode::kHoming) cap = std::min(cap, cfg_.calib_duty);
     float out = 0;
-    if (std::fabs(e) > 2.f || std::fabs(u) > 0.05f)  // small deadzone so it doesn't buzz at rest
+    // The gripper leadscrew can't be back-driven, so once it is parked near its
+    // target it needs no holding torque. Holding it in the PID instead makes the
+    // min_duty kick overshoot the tiny deadzone both ways and it buzzes. Park it
+    // inside a band (with hysteresis) and only drive again for a real error.
+    bool parked = false;
+    if (m == kGripper) {
+      const bool idle_grip = !free_travel && !traj_active_ && jvel_[kGripper] == 0;
+      const float band = Clamp(0.3f * cfg_.joint[kGripper].counts_per_unit, 4.f, 50.f);  // ~0.3 mm
+      if (!idle_grip)
+        grip_settled_ = false;
+      else if (grip_settled_ ? std::fabs(e) < 3.f * band : std::fabs(e) < band)
+        grip_settled_ = true;
+      else
+        grip_settled_ = false;
+      parked = grip_settled_;
+    }
+    if (parked) {
+      integ_[m] = 0;
+    } else if (std::fabs(e) > 2.f || std::fabs(u) > 0.05f) {  // small deadzone so it doesn't buzz at rest
       out = Sign(u) * std::min(cap, mc.min_duty + (1.f - mc.min_duty) * std::fabs(u));
+    }
     st_.duty[m] = out;
     hal_.setMotor(m, out * mc.motor_dir);
 
@@ -867,23 +887,28 @@ void Robot::flipMotorDir(int m) {
 
 void Robot::invertJoint(int j) {
   if (j < 0 || j >= kJoints) return;
-  int ms[2] = {j, -1};
   if (j == kPitch || j == kRoll) {
-    // Both wrist motors carry pitch and roll, so flip both encoders and drives
-    // (this reverses pitch and roll together).
-    ms[0] = 3;
-    ms[1] = 4;
+    // The wrist motors and encoders are fine on their own (the motor test checks
+    // them); only the differential math runs this axis the wrong way. Flip the
+    // axis sign in the kinematics and leave both motors alone. home_dir, limits
+    // and home_pos stay as they are: they describe the joint, which now reads the
+    // right way, so homing also heads the right way.
+    int8_t& sign = (j == kPitch) ? cfg_.pitch_sign : cfg_.roll_sign;
+    sign = static_cast<int8_t>(-sign);
+    // Same motor targets in the new sign: nothing moves.
+    jtarget_[j] = -jtarget_[j];
+    zero_[j] = -zero_[j];
+    traj_from_[j] = -traj_from_[j];
+    traj_to_[j] = -traj_to_[j];
+    jvel_[j] = 0;
+    st_.homed[j] = false;
+    return;
   }
-  for (int m : ms) {
-    if (m < 0) continue;
-    cfg_.motor[m].enc_dir = -cfg_.motor[m].enc_dir;
-    cfg_.motor[m].motor_dir = -cfg_.motor[m].motor_dir;
-  }
+  cfg_.motor[j].enc_dir = -cfg_.motor[j].enc_dir;
+  cfg_.motor[j].motor_dir = -cfg_.motor[j].motor_dir;
   // Same physical homing direction in the new joint sign.
   cfg_.joint[j].home_dir = -cfg_.joint[j].home_dir;
-  if (j == kPitch || j == kRoll) cfg_.joint[j == kPitch ? kRoll : kPitch].home_dir *= -1;
   st_.homed[j] = false;
-  if (j == kPitch || j == kRoll) st_.homed[kPitch] = st_.homed[kRoll] = false;
 }
 
 void Robot::setZeroHere(int j) {

@@ -84,6 +84,10 @@ void BindJoint(Io io, JointConfig& j) {
 
 void BindGlobals(Io io, RobotConfig& c) {
   io.f("roll_ratio", c.roll_ratio);
+  io.i("pitch_sign", c.pitch_sign);
+  io.i("roll_sign", c.roll_sign);
+  if (c.pitch_sign != -1) c.pitch_sign = 1;
+  if (c.roll_sign != -1) c.roll_sign = 1;
   io.f("calib_duty", c.calib_duty);
   io.f("test_duty", c.test_duty);
   io.i("test_ms", c.test_ms);

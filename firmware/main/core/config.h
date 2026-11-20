@@ -78,6 +78,10 @@ struct RobotConfig {
   MotorConfig motor[kMotors];
   JointConfig joint[kJoints];
   float roll_ratio = 1.0f;          // roll counts / pitch counts for the same motor travel
+  // Wrist differential direction: -1 reverses that wrist axis in the kinematics
+  // without touching either motor's drive or encoder direction.
+  int8_t pitch_sign = 1;
+  int8_t roll_sign = 1;
   float calib_duty = 0.6f;          // duty cap while driving into hard stops
   float test_duty = 0.7f;           // duty for the open-loop motor test
   uint16_t test_ms = 300;           // pulse length per direction for the motor test

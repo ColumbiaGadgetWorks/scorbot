@@ -368,6 +368,66 @@ static void TestDifferentialWrist() {
   CHECK(da > 100 && db < -100 && std::abs(da + db) < 30, "da %d db %d", da, db);
 }
 
+static void TestWristSign() {
+  std::puts("wrist: reversing pitch/roll flips only the kinematics, not the motors");
+  Rig r;
+  r.run(0.05f);
+  r.robot.enable();
+  float tgt[kJoints] = {};
+  bool use[kJoints] = {};
+  tgt[kPitch] = r.robot.status().pos[kPitch] + 15.f;
+  tgt[kRoll] = r.robot.status().pos[kRoll] + 25.f;
+  use[kPitch] = use[kRoll] = true;
+  r.robot.moveTo(tgt, use, 1.f);
+  r.run(10.f, [&] { return r.idle(); });
+  r.run(0.3f);
+  const float p0 = r.robot.status().pos[kPitch], q0 = r.robot.status().pos[kRoll];
+  const int md3 = r.cfg.motor[3].motor_dir, ed3 = r.cfg.motor[3].enc_dir;
+  const int32_t a0 = r.robot.status().counts[3], b0 = r.robot.status().counts[4];
+  r.robot.invertJoint(kPitch);
+  r.run(0.5f);
+  CHECK(r.cfg.pitch_sign == -1 && r.cfg.roll_sign == 1, "signs %d %d", r.cfg.pitch_sign, r.cfg.roll_sign);
+  CHECK(r.cfg.motor[3].motor_dir == md3 && r.cfg.motor[3].enc_dir == ed3, "motor dirs changed");
+  CHECK(std::abs(r.robot.status().counts[3] - a0) < 30 && std::abs(r.robot.status().counts[4] - b0) < 30,
+        "wrist moved on invert: %d %d", (int)(r.robot.status().counts[3] - a0), (int)(r.robot.status().counts[4] - b0));
+  CHECK(std::fabs(r.robot.status().pos[kPitch] + p0) < 0.5f, "pitch %.2f vs %.2f", r.robot.status().pos[kPitch], p0);
+  CHECK(std::fabs(r.robot.status().pos[kRoll] - q0) < 0.5f, "roll %.2f vs %.2f", r.robot.status().pos[kRoll], q0);
+  CHECK(r.robot.status().mode == Mode::kIdle, "mode %s %s", ModeName(r.robot.status().mode), r.robot.lastError());
+  // A positive pitch move now turns motor 3 backwards and motor 4 forwards.
+  const int32_t a1 = r.robot.status().counts[3], b1 = r.robot.status().counts[4];
+  tgt[kPitch] = r.robot.status().pos[kPitch] + 20.f;
+  tgt[kRoll] = r.robot.status().pos[kRoll];
+  r.robot.moveTo(tgt, use, 1.f);
+  r.run(10.f, [&] { return r.idle(); });
+  const int da = (int)(r.robot.status().counts[3] - a1), db = (int)(r.robot.status().counts[4] - b1);
+  CHECK(da < -100 && db > 100 && std::abs(da + db) < 30, "da %d db %d", da, db);
+  r.robot.invertJoint(kRoll);
+  r.run(0.2f);
+  CHECK(r.cfg.roll_sign == -1, "roll sign %d", r.cfg.roll_sign);
+}
+
+static void TestGripperParks() {
+  std::puts("gripper: parks with the motor off once it reaches its target");
+  Rig r;
+  r.run(0.05f);
+  r.robot.enable();
+  float tgt[kJoints] = {};
+  bool use[kJoints] = {};
+  tgt[kGripper] = r.robot.status().pos[kGripper] + 5.f;
+  use[kGripper] = true;
+  r.robot.moveTo(tgt, use, 1.f);
+  r.run(10.f, [&] { return r.idle(); });
+  r.run(0.3f);
+  int driven = 0;
+  for (int i = 0; i < 1000; ++i) {
+    r.run(0.001f);
+    if (r.robot.status().duty[kGripper] != 0) ++driven;
+  }
+  CHECK(driven == 0, "gripper driven %d of 1000 ms at rest", driven);
+  CHECK(std::fabs(r.robot.status().pos[kGripper] - tgt[kGripper]) < 0.6f, "gripper error %.2f mm",
+        r.robot.status().pos[kGripper] - tgt[kGripper]);
+}
+
 int main() {
   TestEnableAndMove();
   TestHomeAll();
@@ -382,6 +442,8 @@ int main() {
   TestOverCurrent();
   TestHandCalibrate();
   TestDifferentialWrist();
+  TestWristSign();
+  TestGripperParks();
   std::printf("\n%d checks passed, %d failed\n", g_pass, g_fail);
   return g_fail ? 1 : 0;
 }

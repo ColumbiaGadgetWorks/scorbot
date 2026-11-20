@@ -10,7 +10,7 @@
 @media (prefers-color-scheme:dark){:root{--bg:#0f1115;--panel:#171a21;--panel2:#1d2129;--ink:#e5e7eb;--ink2:#9aa3b2;--line:#2a2f3a;--accent:#60a5fa;--ok:#4ade80;--okbg:#14301f;--warn:#fbbf24;--warnbg:#3a2c0b;--bad:#f87171;--badbg:#3b1414;--idle:#9aa3b2;--viewer:#12151b;--grid:#2a3240;--shadow:none}}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;touch-action:manipulation}
+button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 button:hover{border-color:var(--accent)}
 button:disabled{opacity:.45;cursor:not-allowed}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -218,7 +218,8 @@ form.cfg label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:v
       <h3>3D model geometry</h3>
       <p class="hint">Estimates from the ER-4u manual (610 mm reach). Stored in this browser only. "Absolute" means the joint angle is measured from horizontal rather than from the previous link (the ER arms' belt drives keep the forearm and wrist level as the shoulder moves).</p>
       <form class="cfg" id="geoForm" onsubmit="return false"></form>
-      <div class="row" style="margin-top:10px"><button id="geoReset" class="small">Reset to estimates</button></div>
+      <div class="row" style="margin-top:10px"><button id="geoUp" class="small" title="Use after homing, with the real arm pointing straight up">Arm is straight up now: match model</button><button id="geoReset" class="small">Reset to estimates</button></div>
+      <p class="hint">The home switches don't need moving. Home the arm, jog it until it points straight up (gripper up too) and press "Arm is straight up now": the model's zero offsets are set from the current joint angles.</p>
     </div>
     <div class="card" style="grid-column:1/-1">
       <h3>Joint settings</h3>
@@ -583,6 +584,7 @@ function holdJog(btn, j, dir, speed=speedFrac){
   const start = e => { e.preventDefault(); if(timer) return; btn.classList.add("active"); send().then(r=>{ if(!r.ok) toast("⚠ "+r.error); }); timer=setInterval(send,200); };  // renews the controller's jog lease
   const stop = () => { if(!timer) return; clearInterval(timer); timer=null; btn.classList.remove("active"); Conn.send({cmd:"jog", joint:j, speed:0}); };
   btn.addEventListener("pointerdown", start); ["pointerup","pointerleave","pointercancel"].forEach(ev=>btn.addEventListener(ev, stop));
+  btn.addEventListener("contextmenu", e=>e.preventDefault());  // long press: no copy/share menu
 }
 function speedFrac(){ return parseInt($("#speed").value)/100; }
 function moveJoint(j, v){ const pos=[null,null,null,null,null,null]; pos[j]=v; cmd({cmd:"move",pos,speed:speedFrac()}); }
@@ -698,7 +700,7 @@ function buildCalib(){
     r.cpu.addEventListener("change",()=>cmd({cmd:"set_cpu",joint:j,value:parseFloat(r.cpu.value)},"Updated").then(loadConfig));
     at.append(el("tr",{}, el("td",{},JN[j]), r.pos, el("td",{class:"num"},r.cpu),
       el("td",{}, el("div",{class:"row"},
-        el("button",{class:"small",title:"swap which way is positive (flips encoder and motor together)",onclick:()=>cmd({cmd:"invert_joint",joint:j},"Inverted "+JN[j]+": re-home it").then(loadConfig)},"Invert direction"),
+        el("button",{class:"small",title:(j===3||j===4)?"reverse this wrist axis in the differential math (both motors and encoders stay as they are)":"swap which way is positive (flips encoder and motor together)",onclick:()=>cmd({cmd:"invert_joint",joint:j},"Reversed "+JN[j]+": re-home it").then(loadConfig)},(j===3||j===4)?"Reverse wrist direction":"Invert direction"),
         el("button",{class:"small",title:"treat the current position as the home angle",onclick:()=>cmd({cmd:"zero_here",joint:j},"Zeroed "+JN[j])},"Set home here")))));
     adjRows.push(r);
   }
@@ -738,7 +740,7 @@ function drawHand(){
       el("div",{class:"row"},
         el("button",{class:"primary",onclick:async()=>{ const r=await cmd({cmd:"hand_begin",joint:j}); if(r.ok) handGo("end0"); }},"Yes, same way"),
         el("button",{onclick:async()=>{ const r=await cmd({cmd:"invert_joint",joint:j},`Reversed ${name}: check again`); if(r.ok) loadConfig(); }},"No, it's backwards"),
-        j===4?el("span",{class:"muted"},"If pitch was right but roll is backwards, reversing here is fine."):"", skip));
+        (j===3||j===4)?el("span",{class:"muted"},"This reverses only the "+(j===3?"pitch":"roll")+" axis of the wrist math; the motor and encoder directions are not touched."):"", skip));
   } else if(hw.step==="end0"||hw.step==="end1"){
     const e=hw.step==="end0"?0:1;
     box.append(head(), el("p",{},HAND_TIPS[j][e]), live, j===5?gripJog():"",
@@ -813,7 +815,7 @@ function renderCalib(){
 // ---------------------------------------------------------------------------
 const JCOLS=[["counts_per_unit","counts/unit",0.1],["home_pos","home at",0.1],["soft_min","soft min",1],["soft_max","soft max",1],["vmax","max speed /s",1],["amax","accel /s²",10],["home_speed","home speed /s",0.5],["follow_err","follow err",0.5],["stall_ms","stall ms",10],["home_dir","home dir (±1)",2]];
 const MCOLS=[["kp","kp",0.0005],["ki","ki",0.0001],["kd","kd",0.00001],["i_zone","i zone",10],["min_duty","min duty",0.05],["max_duty","max duty",0.05],["trip_a","current trip (A)",0.1],["motor_dir","motor dir",2],["enc_dir","enc dir",2]];
-const GCOLS=[["trip_ms","over-current time (ms)",100],["calib_duty","calibration duty cap",0.05],["test_duty","motor test duty",0.05],["test_ms","motor test pulse (ms)",50],["gripper_open_mm","gripper open after home (mm)",1],["jog_timeout_ms","jog timeout (ms)",50],["roll_ratio","roll ratio",0.01]];
+const GCOLS=[["trip_ms","over-current time (ms)",100],["calib_duty","calibration duty cap",0.05],["test_duty","motor test duty",0.05],["test_ms","motor test pulse (ms)",50],["gripper_open_mm","gripper open after home (mm)",1],["jog_timeout_ms","jog timeout (ms)",50],["roll_ratio","roll ratio",0.01],["pitch_sign","wrist pitch direction (±1)",2],["roll_sign","wrist roll direction (±1)",2]];
 function cfgTable(id, cols, rows, names){
   const t=$(id); t.replaceChildren();
   t.append(el("tr",{}, el("th",{},""), ...cols.map(c=>el("th",{class:"num"},c[1]))));
@@ -826,9 +828,9 @@ function buildSettings(){
   const g=$("#globCfg"); // filled in renderConfig
   $("#cfgSave").onclick = async ()=>{ const r=await Conn.rest("/api/config", CFG); if(r && r.joints){ CFG=r; renderConfig(); toast("Settings saved"); } else toast("⚠ save failed"); };
   $("#cfgReload").onclick = loadConfig;
-  $("#cfgExport").onclick = ()=>{ const a=el("a",{href:URL.createObjectURL(new Blob([JSON.stringify(CFG,null,2)],{type:"application/json"})),download:"scorbot-config.json"}); a.click(); };
+  $("#cfgExport").onclick = ()=>{ const a=el("a",{href:URL.createObjectURL(new Blob([JSON.stringify(Object.assign({},CFG,{model:GEO}),null,2)],{type:"application/json"})),download:"scorbot-config.json"}); a.click(); };
   $("#cfgImportBtn").onclick = ()=>$("#cfgImport").click();
-  $("#cfgImport").onchange = async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); const r=await Conn.rest("/api/config", j); if(r.joints){ CFG=r; renderConfig(); toast("Restored"); } }catch(err){ toast("⚠ not a valid backup"); } };
+  $("#cfgImport").onchange = async e=>{ const f=e.target.files[0]; if(!f) return; try{ const j=JSON.parse(await f.text()); if(j.model){ GEO=Object.assign({},GEO_DEFAULT,j.model); saveGeo(); buildGeoForm(); viewer.draw(); delete j.model; } const r=await Conn.rest("/api/config", j); if(r.joints){ CFG=r; renderConfig(); toast("Restored"); } }catch(err){ toast("⚠ not a valid backup"); } };
   $("#cfgDefaults").onclick = ()=>{ if(confirm("Reset all calibration and tuning to factory defaults?")) cmd({cmd:"defaults"},"Defaults restored").then(loadConfig); };
   // ---- firmware update ----
   const showOta = (s)=>{
@@ -888,6 +890,7 @@ function renderConfig(){
 // ---------------------------------------------------------------------------
 const GEO_DEFAULT = {d1:349, a1:16, a2:221, a3:221, d5:145, sh_off:0, sh_sign:1, el_off:0, el_sign:1, el_abs:true, pi_off:0, pi_sign:1, pi_abs:true, base_sign:1};
 let GEO = Object.assign({}, GEO_DEFAULT);
+function saveGeo(){ try{localStorage.setItem("scorbot.geo",JSON.stringify(GEO));}catch(e){} }
 try{ Object.assign(GEO, JSON.parse(localStorage.getItem("scorbot.geo")||"{}")); }catch(e){}
 function buildGeoForm(){
   const f=$("#geoForm"); f.replaceChildren();
@@ -899,6 +902,14 @@ function buildGeoForm(){
     inp.onchange=()=>{ GEO[k]= isBool?inp.checked:parseFloat(inp.value); try{localStorage.setItem("scorbot.geo",JSON.stringify(GEO));}catch(e){} viewer.draw(); };
     f.append(el("label",{},labels[k],inp));
   }
+  $("#geoUp").onclick=()=>{
+    const q=(S&&S.pos)||PRED.pose();
+    GEO.sh_off=-GEO.sh_sign*q[1];
+    GEO.el_off=-90-GEO.el_sign*q[2];                                    // forearm elevation 90 degrees
+    GEO.pi_off=GEO.pi_abs ? -90-GEO.pi_sign*q[3] : -GEO.pi_sign*q[3];   // tool pointing up
+    for(const k of ["sh_off","el_off","pi_off"]) GEO[k]=Math.round(GEO[k]*10)/10;
+    saveGeo(); buildGeoForm(); viewer.draw(); toast("Model zero set from the current pose");
+  };
   $("#geoReset").onclick=()=>{ GEO=Object.assign({},GEO_DEFAULT); try{localStorage.removeItem("scorbot.geo");}catch(e){} buildGeoForm(); viewer.draw(); };
 }
 // Forward kinematics -> key points in mm (z up). Angles in degrees.
@@ -1015,7 +1026,7 @@ const viewer = {
 // ---------------------------------------------------------------------------
 class MockRobot {
   constructor(){
-    this.cfg = {trip_ms:1000,calib_duty:0.6,test_duty:0.7,test_ms:300,gripper_open_mm:40,jog_timeout_ms:600,roll_ratio:1,home_order:[1,2,3,4,5,0],
+    this.cfg = {trip_ms:1000,calib_duty:0.6,test_duty:0.7,test_ms:300,gripper_open_mm:40,jog_timeout_ms:600,roll_ratio:1,pitch_sign:1,roll_sign:1,home_order:[1,2,3,4,5,0],
       joints:[["base",-155,155,140],["shoulder",-35,130,140],["elbow",-130,130,140],["pitch",-130,130,75],["roll",-570,570,75],["gripper",0,75,100]].map(([name,lo,hi,cpu],i)=>({name,has_switch:i<5,home_dir:-1,spec_min:lo,spec_max:hi,continuous:i===4,counts_per_unit:cpu,cpu_calibrated:false,home_pos:0,soft_min:lo+2,soft_max:hi-2,vmax:[40,30,30,60,90,20][i],amax:180,home_speed:8,follow_err:8,stall_ms:150})),
       motors:[0,1,2,3,4,5].map(()=>({motor_dir:1,enc_dir:1,kp:0.004,ki:0.0008,kd:0.00002,i_zone:300,min_duty:0.3,max_duty:1,trip_a:2.9}))};
     this.pos=[25,55,-35,-20,0,30]; this.tgt=this.pos.slice(); this.vel=[0,0,0,0,0,0]; this.jogUntil=[0,0,0,0,0,0];
@@ -1048,7 +1059,7 @@ class MockRobot {
       case "self_test": { const e=needEnabled(); if(e) return e; this.mode="test"; this.mtest.forEach((t,i)=>this.mtest[i]={r:"pending",fwd:0,rev:0,i:null,note:""}); this.jobs=[0,1,2,3,4,5].map(i=>["test",i]); return ok; }
       case "apply_calibration": { const js=m.joint<0?[0,1,2,3,5]:[m.joint]; let any=false; for(const j of js){ const c=this.cal[j]; if(c.r==="pass"){ Object.assign(this.cfg.joints[j],{counts_per_unit:c.cpu,cpu_calibrated:true,home_pos:c.home,soft_min:c.smin,soft_max:c.smax}); any=true; } } return any?ok:no("no calibration result for that joint"); }
       case "flip_motor": this.cfg.motors[m.motor].motor_dir*=-1; return ok;
-      case "invert_joint": this.cfg.motors[m.joint].enc_dir*=-1; this.homed[m.joint]=false; return ok;
+      case "invert_joint": if(m.joint===3||m.joint===4){ const k=m.joint===3?"pitch_sign":"roll_sign"; this.cfg[k]*=-1; } else this.cfg.motors[m.joint].enc_dir*=-1; this.homed[m.joint]=false; return ok;
       case "zero_here": this.homed[m.joint]=true; return ok;
       case "set_cpu": this.cfg.joints[m.joint].counts_per_unit=m.value; this.cfg.joints[m.joint].cpu_calibrated=true; return ok;
       case "hand_begin": if(this.enabled && m.joint!==5) return no("disable the motors first"); this.hand={j:m.joint,has:[false,false]}; this.cal[m.joint]={r:"pending",note:""}; return ok;
