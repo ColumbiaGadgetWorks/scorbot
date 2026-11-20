@@ -325,8 +325,34 @@ bool QueuePush(const void* data, size_t len, bool binary, int max_queued) {
   return true;
 }
 
-// /ws push: a binary wire::Live frame at 20 Hz, plus the slow-changing
-// {"t":"info"} JSON only when it changes (or a client has just connected).
+// The parts of the state frame that are events: a change is pushed at once.
+struct EventKey {
+  uint8_t mode, flags, homed, calibrated, sw, sw_on, sw_off;
+  int8_t busy;
+  char fault[sizeof(wire::Live::fault)], phase[sizeof(wire::Live::phase)];
+};
+EventKey KeyOf(const wire::Live& l) {
+  EventKey k;
+  std::memset(&k, 0, sizeof(k));
+  k.mode = l.mode;
+  k.flags = l.flags;
+  k.homed = l.homed;
+  k.calibrated = l.calibrated;
+  k.sw = l.sw;
+  k.sw_on = l.sw_on;
+  k.sw_off = l.sw_off;
+  k.busy = l.busy;
+  std::strncpy(k.fault, l.fault, sizeof(k.fault) - 1);
+  std::strncpy(k.phase, l.phase, sizeof(k.phase) - 1);
+  return k;
+}
+
+// /ws push: a binary wire::Live frame when something happens (mode, fault,
+// switch, homed... changed, e.g. a move finished or was stopped) and otherwise
+// every 500 ms (200 ms during motor/encoder/switch tests) to carry positions
+// the UI didn't cause, such as joints turned by hand. Between frames the UI
+// predicts accepted moves and jogs itself, so a late or lost frame costs
+// nothing. Plus the slow-changing {"t":"info"} JSON only when it changes.
 // Under the lock we only copy plain structs; JSON is built after releasing it,
 // so the 1 kHz control loop never waits on cJSON.
 void Broadcaster(void*) {
@@ -338,9 +364,12 @@ void Broadcaster(void*) {
   int8_t last_busy = -2;
   uint32_t dropped = 0;
   bool info_owed = false;  // a new client hasn't had the info yet
+  bool live_owed = false;  // an event frame couldn't be queued: retry
+  EventKey last_key = {};
+  TickType_t last_push = 0;
   TickType_t last = xTaskGetTickCount();
   for (uint32_t tick = 0;; ++tick) {
-    vTaskDelayUntil(&last, pdMS_TO_TICKS(50));  // 20 Hz
+    vTaskDelayUntil(&last, pdMS_TO_TICKS(50));  // look for events at 20 Hz
     size_t n = 8;
     int fds[8], ws[8], n_ws = 0;
     if (httpd_get_client_list(g_server, &n, fds) != ESP_OK) continue;
@@ -373,10 +402,23 @@ void Broadcaster(void*) {
       ESP_LOGI(TAG, "mode %u%s%s", live.mode, live.fault[0] ? ": " : "", live.fault);
       last_logged_mode = live.mode;
     }
-    // A late state frame is worthless (the next one is 50 ms behind it): drop
-    // it rather than let a backlog build up.
-    if (!QueuePush(&live, sizeof(live), true, 2) && ++dropped % 100 == 1)
-      ESP_LOGW(TAG, "web link slow: dropped %u state frames", static_cast<unsigned>(dropped));
+    const EventKey key = KeyOf(live);
+    const bool event = new_client || live_owed || std::memcmp(&key, &last_key, sizeof(key)) != 0;
+    const uint32_t period_ms = live.mode == static_cast<uint8_t>(scorbot::Mode::kTest) ? 200 : 500;
+    const TickType_t now = xTaskGetTickCount();
+    if (event || now - last_push >= pdMS_TO_TICKS(period_ms)) {
+      // Never let a backlog build up behind a slow client: if the server is
+      // still busy, skip this frame (an event is retried on the next tick).
+      if (QueuePush(&live, sizeof(live), true, 2)) {
+        last_push = now;
+        last_key = key;
+        live_owed = false;
+      } else {
+        live_owed = event;
+        if (++dropped % 20 == 1)
+          ESP_LOGW(TAG, "web link slow: skipped %u state frames", static_cast<unsigned>(dropped));
+      }
+    }
 
     if (!info_due) continue;
     cJSON* j = api::Info(snap, hw);

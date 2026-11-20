@@ -51,6 +51,10 @@ static void TestEnableAndMove() {
   tgt[kBase] = start + 30.f;
   use[kBase] = true;
   CHECK(r.robot.moveTo(tgt, use, 0.5f), "%s", r.robot.lastError());
+  // what the move reply tells the web UI to animate
+  CHECK(std::fabs(r.robot.moveTarget(kBase) - tgt[kBase]) < 0.05f, "planned target %.2f", r.robot.moveTarget(kBase));
+  const float planned_T = r.robot.moveTime();
+  CHECK(planned_T > 0.1f && planned_T < 10.f, "planned time %.2f s", planned_T);
   CHECK(r.run(10.f, [&] { return r.idle(); }), "move did not finish");
   r.run(0.5f);
   float err = r.robot.status().pos[kBase] - tgt[kBase];

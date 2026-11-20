@@ -189,7 +189,7 @@ form.cfg label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:v
       <div class="row" style="margin-top:8px"><button id="applyAllBtn" class="primary">Apply all results</button></div>
     </li>
     <li><h4>Wrist roll: one-turn method</h4>
-      <p class="muted" style="margin:0 0 8px">Put a mark on the gripper, press Start, jog roll exactly one full turn back to the mark, then press Done.</p>
+      <p class="muted" style="margin:0 0 8px">Jog the wrist roll until the gripper is flat, press Start, jog it one full turn (360°) until it is flat again, then press Done.</p>
       <div class="row"><button id="rollStart">Start</button><button id="rollDone" disabled>Done (360°)</button><span class="muted" id="rollInfo"></span></div>
     </li>
     <li><h4>Directions and manual adjustments</h4>
@@ -376,7 +376,7 @@ const Conn = {
     }, 1000);
   },
   send(msg){
-    if (demo) return Promise.resolve(demo.handle(msg));
+    if (demo) { const r=demo.handle(msg); PRED.reply(msg, r); return Promise.resolve(r); }
     const key = msg.cmd+":"+(msg.joint??"")+":"+(msg.motor??"");
     if (isHalt(msg)) {  // never delayed; cancel queued motion it would otherwise be followed by
       for (const [k,q] of this.queued) if (msg.cmd!=="jog" || k===key) { clearTimeout(q.timer); q.res({ok:true, superseded:true}); this.queued.delete(k); }
@@ -402,7 +402,7 @@ const Conn = {
     return new Promise(res => {
       if (!this.ws || this.ws.readyState!==1) return res({ok:false,error:"not connected"});
       const id = this.id++;
-      this.pending.set(id, res);
+      this.pending.set(id, r => { PRED.reply(msg, r); res(r); });
       setTimeout(()=>{ if(this.pending.has(id)){ this.pending.delete(id); res({ok:false,error:"timeout"}); } }, 3000);
       const k = this.key();
       this.ws.send(JSON.stringify(Object.assign({id}, msg, k?{key:k}:{})));
@@ -450,9 +450,94 @@ function onState(s){
   if (S && S.vm_ok!==s.vm_ok) logEvent(s.vm_ok ? "motor power on" : "motor power off");
   if (S && S.enabled!==s.enabled) logEvent(s.enabled ? "motors enabled" : "motors disabled");
   if (S && S.vm_ok!==s.vm_ok) setTimeout(updateLinkBar);
+  const prev = S;
   S = s;
+  PRED.frame(prev, s);
   scheduleRender();
 }
+
+// ---------------------------------------------------------------------------
+// Optimistic display. The controller sends state only when something happens
+// (mode, fault, switches, a move ending) and otherwise every 0.5 s. In between,
+// the arm shown here is predicted: a move the controller accepted replays its
+// own trapezoid profile to the target it replied with, and a held jog runs at
+// its speed. A state frame that disagrees (fault, E-stop, stop, the move ended
+// early, a joint far off the prediction) drops the prediction and the display
+// goes back to where the controller says the arm really is.
+// ---------------------------------------------------------------------------
+const ACCEL_FRAC = 0.25;  // kAccelFrac in core/robot.cpp
+function profile(x){
+  x=Math.max(0,Math.min(1,x)); const ta=ACCEL_FRAC, vpk=1/(1-ta);
+  if(x<ta) return 0.5*vpk/ta*x*x;
+  if(x>1-ta){ const r=1-x; return 1-0.5*vpk/ta*r*r; }
+  return 0.5*vpk*ta+vpk*(x-ta);
+}
+const PRED = {
+  disp:null, plan:null, jog:[null,null,null,null,null,null], at:0, raf:0, last:0,
+  pose(){ return this.disp || (S ? S.pos : [0,0,0,0,0,40]); },
+  target(){ return this.plan ? this.plan.to : (S ? S.tgt : null); },
+  at_(j, now){ const p=this.plan; return p.from[j]+(p.to[j]-p.from[j])*profile((now-p.t0)/p.T); },
+  cancel(why){ if (why && (this.plan || this.jog.some(Boolean))) logEvent("prediction dropped: "+why); this.plan=null; this.jog.fill(null); },
+  reply(msg, r){
+    if (!r || r.superseded) return;
+    const now=performance.now();
+    if (!r.ok) { if (msg.cmd==="jog") this.jog[msg.joint]=null; return; }
+    if (msg.cmd==="move" && Array.isArray(r.target) && r.T>0) {
+      // The controller starts from its current setpoint: the running plan's, a
+      // jog's (≈ what's shown), or the last reported target when it was still.
+      const from = this.plan ? this.plan.to.map((_,j)=>this.at_(j,now)) : this.jog.some(Boolean) ? this.pose().slice() : (S ? S.tgt.slice() : this.pose().slice());
+      this.plan = {from, to:r.target.slice(), T:r.T*1000, t0:now};
+    } else if (msg.cmd==="jog") {
+      const jc = CFG && CFG.joints[msg.joint];
+      // the controller stops a jog that isn't renewed in time: so does the prediction
+      this.jog[msg.joint] = msg.speed && jc ? {v:msg.speed*jc.vmax, until:now+((CFG.jog_timeout_ms)||600)} : null;
+    } else if (["stop","disable","reset","home","calibrate","hand_begin"].includes(msg.cmd)) this.cancel();
+    this.kick();
+  },
+  frame(prev, s){
+    const now=performance.now(); this.at=now;
+    if (!this.disp) this.disp=s.pos.slice();
+    if (s.mode==="fault" || s.mode==="estop") { this.cancel(s.mode+(s.fault?": "+s.fault:"")); this.disp=s.pos.slice(); }
+    else if (!s.enabled) this.cancel("motors off");
+    if (this.plan) {
+      const p=this.plan, left=p.t0+p.T-now;
+      if (prev && prev.mode==="moving" && s.mode!=="moving" && left>300) this.cancel(`move ended early (mode ${s.mode})`);
+      else if (s.mode!=="moving" && left<=0) this.plan=null;  // done: settle on the measured position
+      else {
+        // positions in the frame are up to ~150 ms old: allow for that, plus the following error
+        for (let j=0;j<6;j++) {
+          const jc=CFG&&CFG.joints[j], fe=(jc&&jc.follow_err)||5, v=Math.abs(p.to[j]-p.from[j])/p.T*1000/(1-ACCEL_FRAC);
+          if (Math.abs(s.pos[j]-this.at_(j, now)) > Math.max(5, 2*fe) + v*0.25) { this.cancel(`${JN[j]} off the planned path (${fmt(s.pos[j],1)} vs ${fmt(this.at_(j,now),1)})`); break; }
+        }
+      }
+    }
+    for (let j=0;j<6;j++) if (this.jog[j] && s.mode!=="jog" && prev && prev.mode==="jog") this.jog[j]=null;
+    this.kick();
+  },
+  kick(){ if (!this.raf) { this.last=performance.now(); this.raf=requestAnimationFrame(()=>this.tick()); } },
+  tick(){
+    this.raf=0; if (!S) return;
+    const now=performance.now(), dt=Math.min(0.1,(now-this.last)/1000); this.last=now;
+    if (!this.disp) this.disp=S.pos.slice();
+    if (this.plan && now > this.plan.t0+this.plan.T+1500) this.plan=null;  // never confirmed: go by the reports
+    const age=Math.min(0.6,(now-this.at)/1000); let busy=false;
+    for (let j=0;j<6;j++) {
+      const jg=this.jog[j]; if (jg && now>jg.until) this.jog[j]=null;
+      if (this.plan) { this.disp[j]=this.at_(j, now); busy=true; continue; }
+      if (this.jog[j]) {
+        const jc=CFG.joints[j];
+        let d=this.disp[j]+jg.v*dt;
+        d += (S.pos[j]+jg.v*age-d)*Math.min(1,dt*3);  // drift back toward the reports
+        if (S.homed[j] && !jc.continuous) d=Math.max(Math.min(jc.soft_min,jc.soft_max),Math.min(Math.max(jc.soft_min,jc.soft_max),d));
+        this.disp[j]=d; busy=true; continue;
+      }
+      const e=S.pos[j]-this.disp[j];
+      if (Math.abs(e)<0.02) this.disp[j]=S.pos[j]; else { this.disp[j]+=e*Math.min(1,dt*8); busy=true; }
+    }
+    renderJoints(); viewer.draw();
+    if (busy) this.kick();
+  }
+};
 let rq=false;
 function scheduleRender(){ if(rq) return; rq=true; requestAnimationFrame(()=>{ rq=false; render(); }); }
 
@@ -495,7 +580,7 @@ function buildJoints(){
 function holdJog(btn, j, dir, speed=speedFrac){
   let timer=null;
   const send = () => Conn.send({cmd:"jog", joint:j, speed:dir*speed()});
-  const start = e => { e.preventDefault(); if(timer) return; btn.classList.add("active"); send().then(r=>{ if(!r.ok) toast("⚠ "+r.error); }); timer=setInterval(send,100); };
+  const start = e => { e.preventDefault(); if(timer) return; btn.classList.add("active"); send().then(r=>{ if(!r.ok) toast("⚠ "+r.error); }); timer=setInterval(send,200); };  // renews the controller's jog lease
   const stop = () => { if(!timer) return; clearInterval(timer); timer=null; btn.classList.remove("active"); Conn.send({cmd:"jog", joint:j, speed:0}); };
   btn.addEventListener("pointerdown", start); ["pointerup","pointerleave","pointercancel"].forEach(ev=>btn.addEventListener(ev, stop));
 }
@@ -509,14 +594,15 @@ function jointLimits(j){
 function renderJoints(){
   for(let j=0;j<6;j++){
     const r=jointRows[j]; if(!r) continue;
-    r.val.textContent = fmt(S.pos[j],1)+JU[j];
+    const q=PRED.pose(), t=PRED.target();
+    r.val.textContent = fmt(q[j],1)+JU[j];
     const [lo,hi]=jointLimits(j); const pct = v => Math.max(0,Math.min(100,(v-lo)/(hi-lo)*100));
-    r.bar.querySelector("i").style.left = `calc(${pct(S.pos[j])}% - 1px)`;
-    r.bar.querySelector("b").style.left = `calc(${pct(S.tgt[j])}% - 1px)`;
+    r.bar.querySelector("i").style.left = `calc(${pct(q[j])}% - 1px)`;
+    r.bar.querySelector("b").style.left = `calc(${pct(t[j])}% - 1px)`;
     const cal = S.calibrated && S.calibrated[j];
     r.small.textContent = (S.homed[j]?"homed":"not homed") + (cal?"":" · scale est.");
     r.small.style.color = S.homed[j] ? "" : "var(--warn)";
-    if (document.activeElement!==r.inp) r.inp.placeholder = fmt(S.tgt[j],1);
+    if (document.activeElement!==r.inp) r.inp.placeholder = fmt(t[j],1);
   }
 }
 
@@ -628,7 +714,7 @@ const HAND_TIPS = [
   ["Push the shoulder all the way back until it stops.", "Now bring it all the way forward until it stops, passing the home switch."],
   ["Fold the elbow fully up until it stops.", "Now swing it fully down until it stops, passing the home switch."],
   ["Tilt the wrist fully up until it stops.", "Now tilt it fully down until it stops, passing the home switch."],
-  ["Turn the wrist roll by hand until the gripper is flat (jaws level). This becomes 0°.", "Now turn it exactly one full turn clockwise, back to flat."],
+  ["Turn the wrist roll by hand until the gripper is flat (jaws level). This becomes 0°.", "Now turn it one full turn (360°) clockwise, until it is flat again."],
   ["Jog the gripper fully closed with the buttons below. Let go as soon as the jaws stop moving.", "Now jog it fully open, until it stops opening."],
 ];
 const hw = {j:0, step:"start", result:null};
@@ -661,7 +747,7 @@ function drawHand(){
           const r=await cmd({cmd:"hand_mark",joint:j,end:e}); if(!r.ok) return;
           if(!e) return handGo("end1");
           const f=await cmd({cmd:"hand_finish",joint:j}); hw.result=f;
-          if(f.ok){ loadConfig(); handGo("result"); } }},e?"Mark this end and finish":"Mark this end"),
+          if(f.ok){ loadConfig(); handGo("result"); } }},j===4?(e?"Flat again: finish":"It's flat"):(e?"Mark this end and finish":"Mark this end")),
         e?el("button",{class:"small",onclick:async()=>{ const r=await cmd({cmd:"hand_begin",joint:j}); if(r.ok) handGo("end0"); }},"Start this joint over"):"", skip));
   } else if(hw.step==="result"){
     const f=hw.result||{};
@@ -903,9 +989,9 @@ const viewer = {
     // reach circle
     ctx.beginPath(); for(let i=0;i<=64;i++){ const a=i/64*2*Math.PI, p=this.proj([610*Math.cos(a),610*Math.sin(a),0]); i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]); } ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]);
     const x=this.proj([700,0,0]); ctx.fillStyle=C.grid; ctx.font="11px system-ui"; ctx.fillText("front (+x)",x[0]-24,x[1]+14);
-    const q = S ? S.pos : [0,0,0,0,0,40], t = S ? S.tgt : null;
+    const q = PRED.pose(), t = PRED.target();
     // target ghost (wireframe)
-    if (t && S.pos.some((v,i)=>Math.abs(v-t[i])>0.5)) {
+    if (t && q.some((v,i)=>Math.abs(v-t[i])>0.5)) {
       ctx.strokeStyle=C.ghost; ctx.globalAlpha=.55; ctx.lineWidth=1;
       for(const {f} of armFaces(t).parts){ ctx.beginPath(); f.forEach((p,i)=>{ const s=this.proj(p); i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]); }); ctx.closePath(); ctx.stroke(); }
       ctx.globalAlpha=1;
@@ -929,7 +1015,7 @@ const viewer = {
 // ---------------------------------------------------------------------------
 class MockRobot {
   constructor(){
-    this.cfg = {trip_ms:1000,calib_duty:0.6,test_duty:0.7,test_ms:300,gripper_open_mm:40,jog_timeout_ms:300,roll_ratio:1,home_order:[1,2,3,4,5,0],
+    this.cfg = {trip_ms:1000,calib_duty:0.6,test_duty:0.7,test_ms:300,gripper_open_mm:40,jog_timeout_ms:600,roll_ratio:1,home_order:[1,2,3,4,5,0],
       joints:[["base",-155,155,140],["shoulder",-35,130,140],["elbow",-130,130,140],["pitch",-130,130,75],["roll",-570,570,75],["gripper",0,75,100]].map(([name,lo,hi,cpu],i)=>({name,has_switch:i<5,home_dir:-1,spec_min:lo,spec_max:hi,continuous:i===4,counts_per_unit:cpu,cpu_calibrated:false,home_pos:0,soft_min:lo+2,soft_max:hi-2,vmax:[40,30,30,60,90,20][i],amax:180,home_speed:8,follow_err:8,stall_ms:150})),
       motors:[0,1,2,3,4,5].map(()=>({motor_dir:1,enc_dir:1,kp:0.004,ki:0.0008,kd:0.00002,i_zone:300,min_duty:0.3,max_duty:1,trip_a:2.9}))};
     this.pos=[25,55,-35,-20,0,30]; this.tgt=this.pos.slice(); this.vel=[0,0,0,0,0,0]; this.jogUntil=[0,0,0,0,0,0];
@@ -947,11 +1033,14 @@ class MockRobot {
     const needEnabled=()=>!this.enabled?no("not enabled"):busy?no("busy ("+this.mode+")"):null;
     switch(m.cmd){
       case "enable": this.fault=""; this.enabled=true; this.mode="idle"; this.tgt=this.pos.slice(); return ok;
-      case "disable": this.enabled=false; this.mode="disabled"; this.jobs=[]; this.phase=""; this.busy=-1; this.vel.fill(0); return ok;
-      case "stop": this.jobs=[]; this.phase=""; this.busy=-1; this.vel.fill(0); this.tgt=this.pos.slice(); if(this.enabled) this.mode="idle"; return ok;
+      case "disable": this.enabled=false; this.mode="disabled"; this.plan=null; this.jobs=[]; this.phase=""; this.busy=-1; this.vel.fill(0); return ok;
+      case "stop": this.jobs=[]; this.phase=""; this.busy=-1; this.vel.fill(0); this.plan=null; this.tgt=this.pos.slice(); if(this.enabled) this.mode="idle"; return ok;
       case "reset": this.mode="disabled"; this.fault=""; return ok;
-      case "jog": { const e=needEnabled(); if(e) return e; const j=m.joint; this.vel[j]=m.speed*this.cfg.joints[j].vmax; this.jogUntil[j]=this.t+0.3; if(m.speed) this.mode="jog"; return ok; }
-      case "move": { const e=needEnabled(); if(e) return e; m.pos.forEach((v,j)=>{ if(v!==null&&v!==undefined){ const jc=this.cfg.joints[j]; this.tgt[j]=jc.continuous?v:Math.max(jc.soft_min,Math.min(jc.soft_max,v)); }}); this.moveSpeed=m.speed||0.5; this.mode="moving"; return ok; }
+      case "jog": { const e=needEnabled(); if(e) return e; const j=m.joint; this.vel[j]=m.speed*this.cfg.joints[j].vmax; this.jogUntil[j]=this.t+0.6; if(m.speed) this.mode="jog"; return ok; }
+      case "move": { const e=needEnabled(); if(e) return e; const spd=Math.max(0.05,Math.min(1,m.speed||0.5)); const to=this.tgt.slice(); let T=0.05;
+        m.pos.forEach((v,j)=>{ if(v!==null&&v!==undefined){ const jc=this.cfg.joints[j]; to[j]=(jc.continuous||!this.homed[j])?v:Math.max(jc.soft_min,Math.min(jc.soft_max,v));
+          const d=Math.abs(to[j]-this.tgt[j]); T=Math.max(T, d/((1-ACCEL_FRAC)*jc.vmax*spd), Math.sqrt(d/((1-ACCEL_FRAC)*ACCEL_FRAC*jc.amax*spd))); }});
+        this.vel.fill(0); this.plan={from:this.tgt.slice(),to,T,t:0}; this.mode="moving"; return {ok:true,target:to.map(v=>+v.toFixed(2)),T:+T.toFixed(3)}; }
       case "home": case "calibrate": { const e=needEnabled(); if(e) return e; const order=this.cfg.home_order.filter(j=>m.joint<0||j===m.joint).filter(j=>m.cmd==="home"||j!==4);
         if(m.cmd==="calibrate"&&(m.joint===4||m.joint<0)) this.cal[4]={r:"skipped",note:"no hard stops: use the 360 deg method"};
         this.mode=m.cmd==="home"?"homing":"calibrating"; this.jobs=order.flatMap(j=>m.cmd==="home"?[["home",j]]:[["home",j],["min",j],["max",j],["ret",j]]); if(m.cmd==="calibrate") order.forEach(j=>this.cal[j]={r:"pending"}); return ok; }
@@ -1003,9 +1092,10 @@ class MockRobot {
       if(!this.jobs.length){ this.mode=this.enabled?"idle":"disabled"; this.phase=""; this.busy=-1; this.tgt=this.pos.slice(); }
     } else if(this.enabled){
       let moving=false;
+      if(this.plan){ const p=this.plan; p.t+=dt; const s=profile(p.t/p.T); for(let j=0;j<6;j++) this.tgt[j]=p.from[j]+(p.to[j]-p.from[j])*s; if(p.t>=p.T) this.plan=null; moving=true; }
       for(let j=0;j<6;j++){
         if(this.vel[j]){ if(this.t>this.jogUntil[j]) this.vel[j]=0; else { this.tgt[j]+=this.vel[j]*dt; const jc=J[j]; if(!jc.continuous) this.tgt[j]=Math.max(jc.spec_min,Math.min(jc.spec_max,this.tgt[j])); moving=true; } }
-        const d=this.tgt[j]-this.pos[j]; const v=J[j].vmax*(this.mode==="moving"?(this.moveSpeed||0.5):1)*dt*1.1;
+        const d=this.tgt[j]-this.pos[j]; const v=J[j].vmax*dt*1.5;
         if(Math.abs(d)>0.01){ this.pos[j]+=Math.max(-v,Math.min(v,d)); this.duty[j<3?j:j===5?5:3]=Math.max(-1,Math.min(1,d*0.2)); moving=true; }
       }
       if(!moving && (this.mode==="moving"||this.mode==="jog")) this.mode="idle";
@@ -1020,7 +1110,10 @@ class MockRobot {
       mtest:this.mtest.map(t=>Object.assign({},t)),cal:this.cal.map(x=>Object.assign({r:"pending",min:0,max:0,cpu:null,home:null,smin:null,smax:null,note:""},x)),
       hw:{expander:true,adc0:true,adc1:true,net:"demo",ip:"",ssid:"",rssi:0,uptime:Math.round(this.t),reset:"power-on"}};
   }
-  run(cb){ setInterval(()=>{ for(let i=0;i<5;i++) this.step(0.01); cb(this.state()); }, 50); }
+  // Like the controller: a state frame on events, otherwise every 0.5 s.
+  run(cb){ let key="", last=0; setInterval(()=>{ for(let i=0;i<5;i++) this.step(0.01); const s=this.state();
+    const k=JSON.stringify([s.mode,s.enabled,s.fault,s.phase,s.busy,s.homed,s.sw,s.sw_on,s.sw_off,s.calibrated]), now=performance.now();
+    if(k!==key || now-last>=(s.mode==="test"?200:500)){ key=k; last=now; cb(s); } }, 50); }
 }
 
 // ---------------------------------------------------------------------------

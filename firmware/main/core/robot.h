@@ -102,6 +102,10 @@ class Robot {
   const CalibResult& calibResult(int j) const { return calib_[j]; }
   TestKind testKind() const { return test_kind_; }
   const char* lastError() const { return err_; }
+  // The move moveTo() just planned: where each joint ends up (after soft-limit
+  // clamping) and how long it takes. The web UI animates it from these.
+  float moveTarget(int j) const { return countsToUnit(j, traj_to_[j]); }
+  float moveTime() const { return traj_T_; }
 
   // Joint <-> motor count mapping (exposed for tests).
   void motorsToJoints(const float* m, float* j) const;

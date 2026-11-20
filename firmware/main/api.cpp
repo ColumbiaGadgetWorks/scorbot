@@ -189,6 +189,11 @@ void Command(Robot& robot, RobotConfig& cfg, const cJSON* msg, cJSON* reply, boo
       }
     }
     ok = robot.moveTo(tgt, use, static_cast<float>(NumField(msg, "speed", 0.5)));
+    if (ok) {  // what will happen, so the UI can show it without streaming positions
+      cJSON* t = cJSON_AddArrayToObject(reply, "target");
+      for (int j = 0; j < kJoints; ++j) cJSON_AddItemToArray(t, Num(R(robot.moveTarget(j), 2)));
+      cJSON_AddItemToObject(reply, "T", Num(R(robot.moveTime(), 3)));
+    }
   } else if (!std::strcmp(cmd, "home")) {
     ok = robot.home(joint);
   } else if (!std::strcmp(cmd, "calibrate")) {
